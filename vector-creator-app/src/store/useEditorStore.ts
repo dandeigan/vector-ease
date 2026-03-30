@@ -1,0 +1,67 @@
+import { create } from "zustand";
+
+export interface TracingOptions {
+  numberOfColors: number;
+  minColorRatio: number;
+  colorQuantCycles: number;
+  blurRadius: number;
+  blurDelta: number;
+  pathOmit: number;
+  smoothness: number;
+}
+
+const defaultOptions: TracingOptions = {
+  numberOfColors: 4, // Default to 4 colors mapping to 4 Lightburn layers
+  minColorRatio: 0.02,
+  colorQuantCycles: 3,
+  blurRadius: 5,
+  blurDelta: 20,
+  pathOmit: 8,
+  smoothness: 1, // 0 = linear, 1 = smooth
+};
+
+interface EditorState {
+  // Input
+  originalImage: string | null;
+  setOriginalImage: (imgUrl: string | null) => void;
+
+  // Options
+  options: TracingOptions;
+  setOptions: (options: Partial<TracingOptions>) => void;
+
+  // Status
+  isProcessing: boolean;
+  setIsProcessing: (status: boolean) => void;
+  loadingMessage: string;
+  setLoadingMessage: (msg: string) => void;
+
+  // Output
+  resultSvg: string | null;
+  setResultSvg: (svg: string | null) => void;
+
+  // Global actions
+  resetWorkspace: () => void;
+}
+
+export const useEditorStore = create<EditorState>((set) => ({
+  originalImage: null,
+  setOriginalImage: (imgUrl) => set({ originalImage: imgUrl }),
+
+  options: defaultOptions,
+  setOptions: (newOptions) => set((state) => ({ options: { ...state.options, ...newOptions } })),
+
+  isProcessing: false,
+  setIsProcessing: (status) => set({ isProcessing: status }),
+  loadingMessage: "Processing...",
+  setLoadingMessage: (msg) => set({ loadingMessage: msg }),
+
+  resultSvg: null,
+  setResultSvg: (svg) => set({ resultSvg: svg }),
+
+  resetWorkspace: () => set({
+    originalImage: null,
+    resultSvg: null,
+    isProcessing: false,
+    options: defaultOptions
+  }),
+}));

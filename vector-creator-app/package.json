@@ -1,0 +1,40 @@
+{
+  "name": "vector-creator-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@stripe/stripe-js": "^9.0.0",
+    "@xenova/transformers": "^2.17.2",
+    "clsx": "^2.1.1",
+    "fabric": "^7.2.0",
+    "firebase": "^12.11.0",
+    "framer-motion": "^12.38.0",
+    "imagetracerjs": "^1.2.6",
+    "lucide-react": "^1.7.0",
+    "next": "16.2.1",
+    "next-themes": "^0.4.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "stripe": "^21.0.1",
+    "tailwind-merge": "^3.5.0",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/fabric": "^5.3.11",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dxf-writer": "^1.18.4",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
