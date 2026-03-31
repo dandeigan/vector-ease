@@ -1,5 +1,11 @@
 import { create } from "zustand";
 
+export interface PaletteColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
 export interface TracingOptions {
   numberOfColors: number;
   minColorRatio: number;
@@ -8,6 +14,7 @@ export interface TracingOptions {
   blurDelta: number;
   pathOmit: number;
   smoothness: number;
+  customPalette: PaletteColor[] | null;
 }
 
 const defaultOptions: TracingOptions = {
@@ -18,6 +25,7 @@ const defaultOptions: TracingOptions = {
   blurDelta: 20,
   pathOmit: 4,       // Lower threshold — keep smaller detail paths
   smoothness: 1,     // 0 = linear, 1 = smooth curves
+  customPalette: null,
 };
 
 interface EditorState {
