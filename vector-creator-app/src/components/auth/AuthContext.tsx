@@ -3,26 +3,42 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { syncUserToFirestore, getUser, type UserRecord } from "@/lib/firebase/users";
 
 interface AuthContextType {
   user: User | null;
+  userRecord: UserRecord | null;
   loading: boolean;
+  isSuperAdmin: boolean;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  userRecord: null,
   loading: true,
+  isSuperAdmin: false,
   logout: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userRecord, setUserRecord] = useState<UserRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser) {
+        // Sync to Firestore and fetch role
+        await syncUserToFirestore(currentUser.uid, currentUser.email || "");
+        const record = await getUser(currentUser.uid);
+        setUserRecord(record);
+      } else {
+        setUserRecord(null);
+      }
+
       setLoading(false);
     });
 
@@ -31,10 +47,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await signOut(auth);
+    setUserRecord(null);
   };
 
+  const isSuperAdmin = userRecord?.role === "superadmin";
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, userRecord, loading, isSuperAdmin, logout }}>
       {children}
     </AuthContext.Provider>
   );

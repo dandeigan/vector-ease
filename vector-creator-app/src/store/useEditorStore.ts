@@ -11,13 +11,13 @@ export interface TracingOptions {
 }
 
 const defaultOptions: TracingOptions = {
-  numberOfColors: 4, // Default to 4 colors mapping to 4 Lightburn layers
-  minColorRatio: 0.02,
-  colorQuantCycles: 3,
-  blurRadius: 5,
+  numberOfColors: 8, // 8 colors for good layer separation on most images
+  minColorRatio: 0,
+  colorQuantCycles: 4,
+  blurRadius: 1,     // Light blur — preserve detail by default
   blurDelta: 20,
-  pathOmit: 8,
-  smoothness: 1, // 0 = linear, 1 = smooth
+  pathOmit: 4,       // Lower threshold — keep smaller detail paths
+  smoothness: 1,     // 0 = linear, 1 = smooth curves
 };
 
 interface EditorState {

@@ -5,8 +5,11 @@ import { UploadCloud, ImageIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
+import { useAuth } from "@/components/auth/AuthContext";
+import { logVectorization } from "@/lib/firebase/users";
 
 export default function Workspace() {
+  const { user } = useAuth();
   const {
     originalImage, setOriginalImage,
     isProcessing, setIsProcessing,
@@ -16,6 +19,7 @@ export default function Workspace() {
   } = useEditorStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [displaySvg, setDisplaySvg] = useState<string | null>(null);
 
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -23,6 +27,7 @@ export default function Workspace() {
       if (event.target?.result) {
         setOriginalImage(event.target.result as string);
         setResultSvg(null);
+        setDisplaySvg(null);
         runTrace(event.target.result as string);
       }
     };
@@ -57,6 +62,10 @@ export default function Workspace() {
     try {
       const svg = await traceImageToSVG(imgUrl, options);
       setResultSvg(svg);
+      setDisplaySvg(svg);
+      if (user?.uid) {
+        logVectorization(user.uid).catch(() => {});
+      }
     } catch (error) {
       console.error("Tracing failed:", error);
     } finally {
@@ -67,6 +76,13 @@ export default function Workspace() {
   const triggerTrace = () => {
     if (originalImage) runTrace(originalImage);
   };
+
+  const handleFilteredSvgChange = (filtered: string) => {
+    setDisplaySvg(filtered);
+  };
+
+  // When resultSvg changes externally (re-trace), sync displaySvg
+  const svgToShow = displaySvg || resultSvg;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 h-[calc(100vh-5rem)]">
@@ -126,7 +142,7 @@ export default function Workspace() {
                 {resultSvg ? "Vector Preview" : "Original Image"}
               </h3>
               <button
-                onClick={() => { setOriginalImage(null); setResultSvg(null); }}
+                onClick={() => { setOriginalImage(null); setResultSvg(null); setDisplaySvg(null); }}
                 className="text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-dd-gold-400/10"
               >
                 Clear
@@ -134,10 +150,10 @@ export default function Workspace() {
             </div>
 
             <div className="flex-1 overflow-auto checkered-bg p-6 flex items-center justify-center min-h-0">
-              {resultSvg ? (
+              {svgToShow ? (
                 <div
                   className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-auto"
-                  dangerouslySetInnerHTML={{ __html: resultSvg }}
+                  dangerouslySetInnerHTML={{ __html: svgToShow }}
                 />
               ) : (
                 <img
@@ -151,9 +167,9 @@ export default function Workspace() {
         )}
       </div>
 
-      {/* ── Tuning Panel ── */}
+      {/* ── Right Panel: Tuning + Layers ── */}
       <div className="min-h-0 overflow-y-auto">
-        <TuningPanel onTraceTrigger={triggerTrace} disabled={!originalImage || isProcessing} />
+        <TuningPanel onTraceTrigger={triggerTrace} disabled={!originalImage || isProcessing} onFilteredSvgChange={handleFilteredSvgChange} />
       </div>
     </div>
   );

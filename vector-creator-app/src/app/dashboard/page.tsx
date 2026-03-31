@@ -3,11 +3,11 @@
 import { useAuth } from "@/components/auth/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import Workspace from "@/components/editor/Workspace";
 
 export default function DashboardPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, isSuperAdmin, logout } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -44,6 +44,15 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {isSuperAdmin && (
+              <button
+                onClick={() => router.push("/admin")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-dd-gold-400/10 text-dd-gold-400 border border-dd-gold-400/20 hover:bg-dd-gold-400/20 transition-all"
+              >
+                <ShieldCheck className="w-3 h-3" />
+                Admin
+              </button>
+            )}
             <span className="text-xs text-foreground-muted hidden md:block truncate max-w-[200px]">{user.email}</span>
             <button
               onClick={logout}

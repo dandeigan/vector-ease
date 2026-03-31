@@ -2,49 +2,52 @@ import ImageTracer from "imagetracerjs";
 import { TracingOptions } from "@/store/useEditorStore";
 
 /**
- * Maps our high-level UI tracing options into the specific 
- * option keys imagetracerjs expects.
+ * Maps our UI tracing options into imagetracerjs option keys.
+ * Tuned for laser-cutting output: clean paths, crisp layer separation.
  */
 function mapOptionsToImageTracer(opts: TracingOptions) {
-  // ImageTracerJS expects a very specific dictionary format based on its "options" specification.
-  // We customize the 'colorquantization' and 'tracing' options.
   return {
-    // Quality & Colors
+    // Color quantization
     numberofcolors: opts.numberOfColors,
     mincolorratio: opts.minColorRatio,
     colorquantcycles: opts.colorQuantCycles,
-    
-    // Blurring prior to quantization (reduces noise)
+
+    // Pre-processing blur (noise reduction before quantization)
     blurradius: opts.blurRadius,
     blurdelta: opts.blurDelta,
-    
-    // Path building options
-    // pathomit removes small artifact paths (noise dust)
+
+    // Path building — pathomit removes tiny artifact paths (pixel area threshold)
     pathomit: opts.pathOmit,
 
-    // SVG rendering
-    scale: 1,
-    lcd: 0,
-    roundcoords: 1,
+    // Tracing precision — lower = more accurate paths
+    ltres: 0.5,   // Line simplification tolerance
+    qtres: 0.5,   // Quadratic spline tolerance
+    rightangleenhance: true, // Sharpen corners (great for logos and text)
 
-    // Curve Smoothing
-    pal: [{ r: 255, g: 255, b: 255, a: 255 }], // Placeholder if custom palette used
-    qtres: 1,     // Error threshold for quad tree (1 is standard)
-    ltres: 1,     // Error threshold for linear simplification
-    qsplines: opts.smoothness > 0 ? 1 : 0, // Ensure smooth curves are used if requested
+    // Curve type
+    qsplines: opts.smoothness > 0 ? 1 : 0,
+
+    // SVG output
+    scale: 1,
+    roundcoords: 2, // Decimal precision
+    desc: false,     // No description metadata
+    viewbox: true,   // Use viewBox for scalability
+    strokewidth: 0,  // Fill only, no strokes (cleaner for laser import)
+
+    // Let imagetracerjs auto-detect the palette from the image
+    // Do NOT set pal — auto palette from quantization is far better
   };
 }
 
 /**
- * Traces an image completely client-side.
- * Uses imagetracerjs to convert an image URL (or base64) into an SVG string.
+ * Traces an image client-side using imagetracerjs.
+ * Returns a layered SVG string where each color = one laser layer.
  */
 export async function traceImageToSVG(imageUrl: string, options: TracingOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       const tracerOptions = mapOptionsToImageTracer(options);
 
-      // imagetracerjs takes (url, callback, options)
       ImageTracer.imageToSVG(
         imageUrl,
         (svgString: string) => {
