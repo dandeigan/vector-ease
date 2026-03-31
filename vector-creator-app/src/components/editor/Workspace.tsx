@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
 import { detectImageColors, type DetectedColor } from "@/lib/vectorizer/color-detect";
+import { removeBackground } from "@/lib/vectorizer/background-remove";
 import { useAuth } from "@/components/auth/AuthContext";
 import { logVectorization } from "@/lib/firebase/users";
 
@@ -27,6 +28,7 @@ export default function Workspace() {
   const [selectedColors, setSelectedColors] = useState<Set<number>>(new Set());
   const [showDetection, setShowDetection] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
 
   const handleFile = (file: File) => {
     const reader = new FileReader();
@@ -129,6 +131,37 @@ export default function Workspace() {
   const handleAdjustManually = () => {
     setShowDetection(false);
     setOptions({ customPalette: null });
+  };
+
+  const handleRemoveBackground = async () => {
+    if (!originalImage) return;
+    setIsRemovingBg(true);
+    try {
+      const result = await removeBackground(originalImage, (msg) => {
+        setLoadingMessage(msg);
+      });
+      setOriginalImage(result);
+      setResultSvg(null);
+      setDisplaySvg(null);
+      // Re-detect colors on the new image
+      setShowDetection(true);
+      setIsDetecting(true);
+      const colors = await detectImageColors(result);
+      setDetectedColors(colors);
+      setIsDetecting(false);
+      if (colors.length > 0) {
+        const allSelected = new Set(colors.map((_: DetectedColor, i: number) => i));
+        setSelectedColors(allSelected);
+        setOptions({
+          numberOfColors: colors.length,
+          customPalette: colors.map((c: DetectedColor) => ({ r: c.r, g: c.g, b: c.b })),
+        });
+      }
+    } catch (err) {
+      console.error("Background removal failed:", err);
+    } finally {
+      setIsRemovingBg(false);
+    }
   };
 
   const handleFilteredSvgChange = (filtered: string) => {
@@ -309,7 +342,7 @@ export default function Workspace() {
 
       {/* ── Right Panel: Tuning + Layers ── */}
       <div className="min-h-0 overflow-y-auto">
-        <TuningPanel onTraceTrigger={triggerTrace} disabled={!originalImage || isProcessing} onFilteredSvgChange={handleFilteredSvgChange} />
+        <TuningPanel onTraceTrigger={triggerTrace} onRemoveBackground={handleRemoveBackground} isRemovingBg={isRemovingBg} disabled={!originalImage || isProcessing} onFilteredSvgChange={handleFilteredSvgChange} />
       </div>
     </div>
   );

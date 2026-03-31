@@ -3,9 +3,12 @@
 import { useEditorStore } from "@/store/useEditorStore";
 import { Download, Play, Wand2, Layers, Spline, Droplets, Eye, EyeOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 
 interface TuningPanelProps {
   onTraceTrigger: () => void;
+  onRemoveBackground?: () => void;
+  isRemovingBg?: boolean;
   disabled: boolean;
   onFilteredSvgChange?: (svg: string) => void;
 }
@@ -66,7 +69,7 @@ function colorName(hex: string): string {
   return "Color";
 }
 
-export default function TuningPanel({ onTraceTrigger, disabled, onFilteredSvgChange }: TuningPanelProps) {
+export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
   const { options, setOptions, resultSvg } = useEditorStore();
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
 
@@ -106,6 +109,20 @@ export default function TuningPanel({ onTraceTrigger, disabled, onFilteredSvgCha
     const a = document.createElement("a");
     a.href = url;
     a.download = "vectorease-output.svg";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadDXF = () => {
+    if (!resultSvg) return;
+    const dxfString = svgToDxf(resultSvg);
+    const blob = new Blob([dxfString], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "vectorease-output.dxf";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -266,11 +283,21 @@ export default function TuningPanel({ onTraceTrigger, disabled, onFilteredSvgCha
       {/* ── Pro Tools ── */}
       <div className="px-5 py-4 border-t border-border">
         <button
-          disabled={disabled}
+          disabled={disabled || isRemovingBg}
+          onClick={onRemoveBackground}
           className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 hover:bg-dd-blue-400/[0.05] transition-all duration-200 disabled:opacity-30 disabled:hover:border-border disabled:hover:text-foreground-muted disabled:hover:bg-transparent"
         >
-          <Wand2 className="w-3.5 h-3.5" />
-          AI Remove Background
+          {isRemovingBg ? (
+            <>
+              <div className="w-3.5 h-3.5 border-2 border-dd-blue-400 border-t-transparent rounded-full animate-smooth-spin" />
+              Removing Background...
+            </>
+          ) : (
+            <>
+              <Wand2 className="w-3.5 h-3.5" />
+              AI Remove Background
+            </>
+          )}
         </button>
       </div>
 
@@ -286,6 +313,7 @@ export default function TuningPanel({ onTraceTrigger, disabled, onFilteredSvgCha
         </button>
         <button
           disabled={!resultSvg}
+          onClick={handleDownloadDXF}
           className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-gold-400/30 hover:text-dd-gold-400 transition-all duration-200 disabled:opacity-30"
         >
           <Download className="w-3.5 h-3.5" />

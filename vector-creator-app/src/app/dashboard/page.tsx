@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { LogOut, ShieldCheck } from "lucide-react";
 import Workspace from "@/components/editor/Workspace";
+import UpgradeButton from "@/components/UpgradeButton";
 
 export default function DashboardPage() {
   const { user, loading, isSuperAdmin, logout } = useAuth();
@@ -44,6 +45,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <UpgradeButton />
             {isSuperAdmin && (
               <button
                 onClick={() => router.push("/admin")}
