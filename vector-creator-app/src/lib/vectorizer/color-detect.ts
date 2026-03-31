@@ -55,35 +55,45 @@ export async function detectImageColors(imageUrl: string): Promise<DetectedColor
         .sort((a, b) => b.count - a.count);
 
       // Step 3: Cluster — merge colors within distance threshold
-      const clusters: { r: number; g: number; b: number; count: number }[] = [];
-      const MERGE_DISTANCE = 60; // Colors within this distance are "same"
+      const MERGE_DISTANCE = 80; // Aggressive merge to collapse anti-aliasing shades
 
-      for (const pixel of sorted) {
-        let merged = false;
-        for (const cluster of clusters) {
-          const dist = Math.sqrt(
-            (pixel.r - cluster.r) ** 2 +
-            (pixel.g - cluster.g) ** 2 +
-            (pixel.b - cluster.b) ** 2
-          );
-          if (dist < MERGE_DISTANCE) {
-            // Weighted average to shift cluster center
-            const totalCount = cluster.count + pixel.count;
-            cluster.r = Math.round((cluster.r * cluster.count + pixel.r * pixel.count) / totalCount);
-            cluster.g = Math.round((cluster.g * cluster.count + pixel.g * pixel.count) / totalCount);
-            cluster.b = Math.round((cluster.b * cluster.count + pixel.b * pixel.count) / totalCount);
-            cluster.count = totalCount;
-            merged = true;
-            break;
+      function clusterColors(input: typeof sorted, threshold: number) {
+        const clusters: { r: number; g: number; b: number; count: number }[] = [];
+        for (const pixel of input) {
+          let merged = false;
+          for (const cluster of clusters) {
+            const dist = Math.sqrt(
+              (pixel.r - cluster.r) ** 2 +
+              (pixel.g - cluster.g) ** 2 +
+              (pixel.b - cluster.b) ** 2
+            );
+            if (dist < threshold) {
+              const totalCount = cluster.count + pixel.count;
+              cluster.r = Math.round((cluster.r * cluster.count + pixel.r * pixel.count) / totalCount);
+              cluster.g = Math.round((cluster.g * cluster.count + pixel.g * pixel.count) / totalCount);
+              cluster.b = Math.round((cluster.b * cluster.count + pixel.b * pixel.count) / totalCount);
+              cluster.count = totalCount;
+              merged = true;
+              break;
+            }
+          }
+          if (!merged) {
+            clusters.push({ ...pixel });
           }
         }
-        if (!merged) {
-          clusters.push({ ...pixel });
-        }
+        return clusters;
       }
 
-      // Step 4: Filter out tiny clusters (< 2% of image) and sort
-      const minCount = totalPixels * 0.02;
+      // First pass
+      let clusters = clusterColors(sorted, MERGE_DISTANCE);
+      // Second pass — merge any clusters that drifted close after weighted averaging
+      clusters = clusterColors(
+        clusters.sort((a, b) => b.count - a.count),
+        MERGE_DISTANCE
+      );
+
+      // Step 4: Filter out tiny clusters (< 3% of image) and sort
+      const minCount = totalPixels * 0.03;
       const significant = clusters
         .filter((c) => c.count >= minCount)
         .sort((a, b) => b.count - a.count);
@@ -115,16 +125,36 @@ function toHex(r: number, g: number, b: number): string {
 
 function nameColor(r: number, g: number, b: number): string {
   const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  if (brightness > 230 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30) return "White";
-  if (brightness < 35) return "Black";
-  if (r > 170 && g < 90 && b < 90) return "Red";
-  if (r < 90 && g > 150 && b < 90) return "Green";
-  if (r < 90 && g < 90 && b > 170) return "Blue";
-  if (r > 170 && g > 140 && b < 60) return "Yellow";
-  if (r > 180 && g > 90 && g < 150 && b < 70) return "Orange";
-  if (r > 120 && g < 70 && b > 120) return "Purple";
-  if (r > 150 && g < 100 && b > 100) return "Pink";
-  if (brightness > 180) return "Light Gray";
-  if (brightness > 100) return "Gray";
+  const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+
+  // Neutrals first — low saturation
+  if (saturation < 0.15) {
+    if (brightness > 230) return "White";
+    if (brightness < 35) return "Black";
+    if (brightness > 180) return "Light Gray";
+    if (brightness > 100) return "Gray";
+    return "Dark Gray";
+  }
+
+  // Chromatic colors
+  if (r > 180 && g < 100 && b < 100) return "Red";
+  if (r > 200 && g > 100 && g < 170 && b < 120) return "Salmon";
+  if (r > 180 && g > 90 && g < 150 && b < 80) return "Orange";
+  if (r > 180 && g > 150 && b < 80) return "Yellow";
+  if (r < 100 && g > 150 && b < 100) return "Green";
+  if (r < 80 && g > 120 && b > 120) return "Teal";
+  if (r < 100 && g < 100 && b > 160) return "Blue";
+  if (r < 80 && g > 80 && b > 180) return "Blue";
+  if (r > 60 && r < 160 && g < 100 && b > 160) return "Purple";
+  if (r > 180 && g < 120 && b > 120) return "Pink";
+  if (r > 150 && g > 100 && b > 80 && r > g && r > b) return "Peach";
+
+  // Fallback based on dominant channel
+  if (r > g && r > b) return brightness > 150 ? "Light Red" : "Dark Red";
+  if (g > r && g > b) return brightness > 150 ? "Light Green" : "Dark Green";
+  if (b > r && b > g) return brightness > 150 ? "Light Blue" : "Dark Blue";
+
+  if (brightness > 150) return "Light Gray";
+  if (brightness > 80) return "Gray";
   return "Dark Gray";
 }
