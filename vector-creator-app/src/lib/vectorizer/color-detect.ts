@@ -31,7 +31,7 @@ export async function detectImageColors(imageUrl: string): Promise<DetectedColor
       const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
       // Step 1: Collect all pixels, quantize to reduce noise
-      // Round to nearest 16 to collapse anti-aliasing shades
+      // Round to nearest 8 (finer than 16) to preserve color accuracy
       const buckets = new Map<string, number>();
       const totalPixels = data.length / 4;
 
@@ -39,9 +39,9 @@ export async function detectImageColors(imageUrl: string): Promise<DetectedColor
         const a = data[i + 3];
         if (a < 128) continue; // Skip transparent pixels
 
-        const r = Math.round(data[i] / 16) * 16;
-        const g = Math.round(data[i + 1] / 16) * 16;
-        const b = Math.round(data[i + 2] / 16) * 16;
+        const r = Math.round(data[i] / 8) * 8;
+        const g = Math.round(data[i + 1] / 8) * 8;
+        const b = Math.round(data[i + 2] / 8) * 8;
         const key = `${r},${g},${b}`;
         buckets.set(key, (buckets.get(key) || 0) + 1);
       }
@@ -55,7 +55,7 @@ export async function detectImageColors(imageUrl: string): Promise<DetectedColor
         .sort((a, b) => b.count - a.count);
 
       // Step 3: Cluster — merge colors within distance threshold
-      const MERGE_DISTANCE = 80; // Aggressive merge to collapse anti-aliasing shades
+      const MERGE_DISTANCE = 55; // Moderate merge — catches anti-aliasing but preserves distinct colors
 
       function clusterColors(input: typeof sorted, threshold: number) {
         const clusters: { r: number; g: number; b: number; count: number }[] = [];
@@ -92,8 +92,8 @@ export async function detectImageColors(imageUrl: string): Promise<DetectedColor
         MERGE_DISTANCE
       );
 
-      // Step 4: Filter out tiny clusters (< 3% of image) and sort
-      const minCount = totalPixels * 0.03;
+      // Step 4: Filter out tiny clusters (< 1.5% of image) and sort
+      const minCount = totalPixels * 0.015;
       const significant = clusters
         .filter((c) => c.count >= minCount)
         .sort((a, b) => b.count - a.count);

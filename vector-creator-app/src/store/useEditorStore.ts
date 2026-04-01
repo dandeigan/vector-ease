@@ -20,8 +20,8 @@ export interface TracingOptions {
 const defaultOptions: TracingOptions = {
   numberOfColors: 8, // 8 colors for good layer separation on most images
   minColorRatio: 0,
-  colorQuantCycles: 4,
-  blurRadius: 1,     // Light blur — preserve detail by default
+  colorQuantCycles: 6,  // More iterations = better color accuracy
+  blurRadius: 1,     // Minimal blur to smooth JPEG compression artifacts
   blurDelta: 20,
   pathOmit: 4,       // Lower threshold — keep smaller detail paths
   smoothness: 1,     // 0 = linear, 1 = smooth curves

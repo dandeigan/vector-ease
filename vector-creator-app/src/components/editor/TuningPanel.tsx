@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Download, Play, Wand2, Layers, Spline, Droplets, Eye, EyeOff } from "lucide-react";
+import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 
@@ -19,7 +19,7 @@ interface LayerInfo {
   pathCount: number;
 }
 
-/** Convert rgb(r,g,b) to #RRGGBB */
+/** Convert rgb(r,g,b) string to #RRGGBB */
 function rgbToHex(rgb: string): string {
   const m = rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
   if (!m) return rgb;
@@ -102,9 +102,24 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
     setHiddenLayers(new Set());
   };
 
+  /** Remove hidden layers from SVG before export */
+  const getExportSvg = (): string => {
+    if (!resultSvg) return "";
+    if (hiddenLayers.size === 0) return resultSvg;
+    // Remove paths whose fill color is hidden (not just opacity — fully remove)
+    return resultSvg.replace(
+      /<path[^>]*fill="(rgb\([^)]+\)|#[0-9a-fA-F]{6})"[^>]*\/?>(\s*<\/path>)?/gi,
+      (full, color) => {
+        const hex = color.startsWith("rgb") ? rgbToHex(color).toUpperCase() : color.toUpperCase();
+        return hiddenLayers.has(hex) ? "" : full;
+      }
+    );
+  };
+
   const handleDownloadSVG = () => {
-    if (!resultSvg) return;
-    const blob = new Blob([resultSvg], { type: "image/svg+xml" });
+    const svg = getExportSvg();
+    if (!svg) return;
+    const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -116,8 +131,9 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
   };
 
   const handleDownloadDXF = () => {
-    if (!resultSvg) return;
-    const dxfString = svgToDxf(resultSvg);
+    const svg = getExportSvg();
+    if (!svg) return;
+    const dxfString = svgToDxf(svg);
     const blob = new Blob([dxfString], { type: "application/dxf" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -189,23 +205,6 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
               Curved
             </button>
           </div>
-        </div>
-
-        {/* Blur / Noise */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Droplets className="w-3.5 h-3.5 text-dd-gold-400" />
-            <label className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">Noise Reduction</label>
-            <span className="ml-auto text-sm font-mono font-bold text-dd-gold-400">{options.blurRadius}px</span>
-          </div>
-          <input
-            type="range"
-            min="0" max="10" step="1"
-            value={options.blurRadius}
-            onChange={(e) => setOptions({ blurRadius: parseInt(e.target.value) })}
-            disabled={disabled}
-          />
-          <p className="text-[11px] text-foreground-muted mt-1.5">Higher values smooth out small artifacts</p>
         </div>
 
         {/* Apply */}

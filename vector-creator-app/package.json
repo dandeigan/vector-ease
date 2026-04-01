@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@neplex/vectorizer": "^0.0.5",
     "@stripe/stripe-js": "^9.0.0",
     "@xenova/transformers": "^2.17.2",
     "clsx": "^2.1.1",
