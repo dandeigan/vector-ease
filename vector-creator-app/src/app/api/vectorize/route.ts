@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { vectorize, ColorMode, Hierarchical, PathSimplifyMode, type Config } from "@neplex/vectorizer";
+import { vectorize, type Config } from "@neplex/vectorizer";
+// Use numeric values directly — const enums can't be accessed with isolatedModules
+const ColorMode_Color = 0;
+const Hierarchical_Stacked = 0;
+const PathSimplifyMode_Polygon = 1;
+const PathSimplifyMode_Spline = 2;
 import sharp from "sharp";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -89,12 +94,12 @@ export async function POST(req: NextRequest) {
     // Step 2: Run VTracer on the clean, flat-color image
     // Low precision + high layer difference since image is already quantized
     const config: Config = {
-      colorMode: ColorMode.Color,
-      hierarchical: Hierarchical.Stacked,
+      colorMode: ColorMode_Color,
+      hierarchical: Hierarchical_Stacked,
       filterSpeckle: 8,
       colorPrecision: 3,        // Low — image already has exact colors from quantization
       layerDifference: 25,      // Higher — merge any VTracer artifacts aggressively
-      mode: smoothness === 0 ? PathSimplifyMode.Polygon : PathSimplifyMode.Spline,
+      mode: smoothness === 0 ? PathSimplifyMode_Polygon : PathSimplifyMode_Spline,
       cornerThreshold: 60,
       lengthThreshold: 4.0,
       maxIterations: 10,
