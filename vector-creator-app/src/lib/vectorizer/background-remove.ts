@@ -6,27 +6,8 @@
  * Runs entirely client-side — no server calls, images stay private.
  */
 
-let pipeline: any = null;
-
-async function getSegmenter() {
-  if (pipeline) return pipeline;
-
-  const { pipeline: createPipeline, env } = await import("@xenova/transformers");
-
-  // Use WASM backend for broad compatibility
-  env.allowLocalModels = false;
-
-  pipeline = await createPipeline(
-    "image-segmentation",
-    "Xenova/segformer_b2_clothes", // Lightweight segmentation model
-    { device: "wasm" }
-  );
-
-  return pipeline;
-}
-
 /**
- * Remove background from an image.
+ * Remove background from an image using canvas-based color analysis.
  * Returns a new data URL with transparent background.
  */
 export async function removeBackground(
