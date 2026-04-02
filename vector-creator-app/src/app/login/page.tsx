@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,7 +25,9 @@ export default function LoginPage() {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        // Set display name on Firebase Auth profile
+        await updateProfile(cred.user, { displayName: fullName });
       }
       router.push("/dashboard");
     } catch (err: any) {
@@ -78,22 +82,58 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleAuth} className="space-y-4">
+            {/* Full Name — signup only */}
+            {!isLogin && (
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1.5">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  autoComplete="name"
+                  className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all placeholder:text-foreground-muted/40"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="John Smith"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium text-foreground-muted mb-1.5">Email</label>
               <input
                 type="email"
                 required
+                autoComplete="email"
                 className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all placeholder:text-foreground-muted/40"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@domain.com"
               />
             </div>
+
+            {/* Phone — signup only, optional */}
+            {!isLogin && (
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1.5">
+                  Phone Number <span className="text-foreground-muted/50">(optional)</span>
+                </label>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all placeholder:text-foreground-muted/40"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1 (555) 123-4567"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium text-foreground-muted mb-1.5">Password</label>
               <input
                 type="password"
                 required
+                autoComplete={isLogin ? "current-password" : "new-password"}
                 className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all placeholder:text-foreground-muted/40"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -111,7 +151,7 @@ export default function LoginPage() {
               ) : isLogin ? (
                 "Sign In"
               ) : (
-                "Create Account"
+                "Start 30-Day Free Trial"
               )}
             </button>
           </form>
@@ -124,7 +164,7 @@ export default function LoginPage() {
               onClick={() => { setIsLogin(!isLogin); setError(""); }}
               className="text-dd-gold-400 hover:text-dd-gold-300 font-medium transition-colors"
             >
-              {isLogin ? "Sign up" : "Sign in"}
+              {isLogin ? "Start free trial" : "Sign in"}
             </button>
           </div>
         </div>

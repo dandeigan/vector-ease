@@ -210,10 +210,11 @@ export default function AdminPage() {
             <button
               onClick={() => {
                 const csv = [
-                  ["Name", "Email", "Status", "Role", "Vectorizations", "Joined"].join(","),
+                  ["Name", "Email", "Phone", "Status", "Role", "Vectorizations", "Joined"].join(","),
                   ...users.map((u) => [
                     u.displayName,
                     u.email,
+                    u.phone || "",
                     u.subscriptionStatus,
                     u.role,
                     u.totalVectorizations,

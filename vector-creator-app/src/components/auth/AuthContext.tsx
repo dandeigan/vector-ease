@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (currentUser) {
         // Sync to Firestore and fetch role
-        await syncUserToFirestore(currentUser.uid, currentUser.email || "");
+        await syncUserToFirestore(currentUser.uid, currentUser.email || "", currentUser.displayName || undefined);
         const record = await getUser(currentUser.uid);
         setUserRecord(record);
       } else {
