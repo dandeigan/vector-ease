@@ -16,9 +16,9 @@ function rgbToHex(r: number, g: number, b: number): string {
  * VTracer then gets a clean flat-color image to trace.
  */
 async function quantizeImageToPalette(
-  imageBuffer: Buffer,
+  imageBuffer: Buffer<ArrayBuffer>,
   palette: { r: number; g: number; b: number }[]
-): Promise<Buffer> {
+): Promise<Buffer<ArrayBuffer>> {
   const image = sharp(imageBuffer);
   const metadata = await image.metadata();
   const width = metadata.width!;
@@ -60,11 +60,11 @@ async function quantizeImageToPalette(
   }
 
   // Convert back to PNG
-  return sharp(Buffer.from(pixels), {
+  return sharp(Buffer.from(pixels) as Buffer<ArrayBuffer>, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     .png()
-    .toBuffer();
+    .toBuffer() as Promise<Buffer<ArrayBuffer>>;
 }
 
 export async function POST(req: NextRequest) {
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     }
 
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-    let imageBuffer = Buffer.from(base64Data, "base64");
+    let imageBuffer: Buffer<ArrayBuffer> = Buffer.from(base64Data, "base64") as Buffer<ArrayBuffer>;
 
     const targetLayers = numberOfColors || 7;
 
