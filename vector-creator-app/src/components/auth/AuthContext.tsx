@@ -3,13 +3,15 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
-import { syncUserToFirestore, getUser, type UserRecord } from "@/lib/firebase/users";
+import { syncUserToFirestore, getUser, isTrialExpired, getTrialDaysRemaining, type UserRecord } from "@/lib/firebase/users";
 
 interface AuthContextType {
   user: User | null;
   userRecord: UserRecord | null;
   loading: boolean;
   isSuperAdmin: boolean;
+  trialExpired: boolean;
+  trialDaysLeft: number;
   logout: () => Promise<void>;
 }
 
@@ -18,6 +20,8 @@ const AuthContext = createContext<AuthContextType>({
   userRecord: null,
   loading: true,
   isSuperAdmin: false,
+  trialExpired: false,
+  trialDaysLeft: 30,
   logout: async () => {},
 });
 
@@ -51,9 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isSuperAdmin = userRecord?.role === "superadmin";
+  const trialExpired = userRecord ? isTrialExpired(userRecord) : false;
+  const trialDaysLeft = userRecord ? getTrialDaysRemaining(userRecord) : 30;
 
   return (
-    <AuthContext.Provider value={{ user, userRecord, loading, isSuperAdmin, logout }}>
+    <AuthContext.Provider value={{ user, userRecord, loading, isSuperAdmin, trialExpired, trialDaysLeft, logout }}>
       {children}
     </AuthContext.Provider>
   );

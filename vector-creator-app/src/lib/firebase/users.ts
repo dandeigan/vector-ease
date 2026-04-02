@@ -15,6 +15,7 @@ export interface UserRecord {
   totalVectorizations: number;
   createdAt: Timestamp | null;
   lastLoginAt: Timestamp | null;
+  trialExpiresAt: Timestamp | null;
 }
 
 const USERS = "users";
@@ -26,7 +27,10 @@ export async function syncUserToFirestore(uid: string, email: string) {
   const snap = await getDoc(ref);
 
   if (!snap.exists()) {
-    // First-time user
+    // First-time user — 30-day trial
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 30);
+
     await setDoc(ref, {
       uid,
       email,
@@ -36,6 +40,7 @@ export async function syncUserToFirestore(uid: string, email: string) {
       totalVectorizations: 0,
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
+      trialExpiresAt: Timestamp.fromDate(trialEnd),
     });
   } else {
     // Returning user — update last login
@@ -95,6 +100,23 @@ export async function logVectorization(uid: string) {
     userId: uid,
     timestamp: serverTimestamp(),
   });
+}
+
+/** Check if user's trial has expired */
+export function isTrialExpired(user: UserRecord): boolean {
+  if (user.role === "superadmin") return false;
+  if (user.subscriptionStatus === "active") return false;
+  if (!user.trialExpiresAt) return true;
+  const expiryDate = user.trialExpiresAt.toDate ? user.trialExpiresAt.toDate() : new Date(user.trialExpiresAt as any);
+  return new Date() > expiryDate;
+}
+
+/** Get days remaining in trial */
+export function getTrialDaysRemaining(user: UserRecord): number {
+  if (!user.trialExpiresAt) return 0;
+  const expiryDate = user.trialExpiresAt.toDate ? user.trialExpiresAt.toDate() : new Date(user.trialExpiresAt as any);
+  const diff = expiryDate.getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
 /** Get total vectorization count (admin stats) */

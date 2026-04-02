@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import {
   Users, Activity, Layers, Trash2, UserPlus, Search,
-  LogOut, ShieldCheck, RefreshCw, ChevronDown,
+  LogOut, ShieldCheck, RefreshCw, ChevronDown, Download,
 } from "lucide-react";
 import {
   getAllUsers, deleteUserRecord, updateUserRecord, addManualUser,
@@ -207,6 +207,36 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const csv = [
+                  ["Name", "Email", "Status", "Role", "Vectorizations", "Joined"].join(","),
+                  ...users.map((u) => [
+                    u.displayName,
+                    u.email,
+                    u.subscriptionStatus,
+                    u.role,
+                    u.totalVectorizations,
+                    u.createdAt ? (u.createdAt.toDate ? u.createdAt.toDate().toISOString().split("T")[0] : "") : "",
+                  ].map((v) => `"${v}"`).join(","))
+                ].join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `vectorease-users-${new Date().toISOString().split("T")[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              disabled={users.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all disabled:opacity-30"
+              title="Export users as CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
             <button
               onClick={fetchData}
               className="p-2 rounded-lg border border-border hover:border-dd-blue-400/30 hover:bg-dd-blue-400/[0.05] text-foreground-muted hover:text-dd-blue-400 transition-all"

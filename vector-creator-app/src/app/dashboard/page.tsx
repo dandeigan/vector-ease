@@ -3,12 +3,12 @@
 import { useAuth } from "@/components/auth/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck, Clock, Zap } from "lucide-react";
 import Workspace from "@/components/editor/Workspace";
 import UpgradeButton from "@/components/UpgradeButton";
 
 export default function DashboardPage() {
-  const { user, loading, isSuperAdmin, logout } = useAuth();
+  const { user, loading, isSuperAdmin, trialExpired, trialDaysLeft, logout } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -67,10 +67,39 @@ export default function DashboardPage() {
         </div>
       </nav>
 
+      {/* ── Trial Banner ── */}
+      {!isSuperAdmin && !trialExpired && trialDaysLeft <= 7 && (
+        <div className="bg-dd-gold-400/10 border-b border-dd-gold-400/20 px-5 py-2.5 flex items-center justify-center gap-3">
+          <Clock className="w-4 h-4 text-dd-gold-400" />
+          <span className="text-xs font-medium text-dd-gold-400">
+            {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} left in your free trial
+          </span>
+          <UpgradeButton />
+        </div>
+      )}
+
+      {/* ── Trial Expired Overlay ── */}
+      {trialExpired && !isSuperAdmin && (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-md text-center rounded-2xl border border-border bg-card p-10 glow-gold">
+            <div className="w-16 h-16 rounded-2xl bg-dd-gold-400/10 text-dd-gold-400 flex items-center justify-center mx-auto mb-6">
+              <Zap className="w-8 h-8" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Trial Ended</h2>
+            <p className="text-foreground-muted text-sm mb-6">
+              Your 30-day free trial has expired. Upgrade to VectorEase Pro to continue creating laser-ready vectors.
+            </p>
+            <UpgradeButton />
+          </div>
+        </div>
+      )}
+
       {/* ── Workspace ── */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-5 py-6">
-        <Workspace />
-      </main>
+      {(!trialExpired || isSuperAdmin) && (
+        <main className="flex-1 max-w-[1440px] w-full mx-auto px-5 py-6">
+          <Workspace />
+        </main>
+      )}
     </div>
   );
 }
