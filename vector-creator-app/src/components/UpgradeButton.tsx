@@ -39,7 +39,9 @@ export default function UpgradeButton() {
       }
 
       const stripe = await loadStripe(publishableKey);
-      await stripe?.redirectToCheckout({ sessionId: data.id });
+      if (stripe) {
+        await (stripe as any).redirectToCheckout({ sessionId: data.id });
+      }
     } catch (err) {
       console.error("Checkout failed:", err);
     } finally {
