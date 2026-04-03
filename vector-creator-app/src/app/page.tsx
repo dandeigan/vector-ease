@@ -315,7 +315,7 @@ export default function Home() {
                 Ready to skip the complexity?
               </motion.h2>
               <motion.p variants={fade} custom={1} className="text-foreground-muted text-lg max-w-lg mx-auto mb-8">
-                Stop fighting Inkscape. Go from photo to laser bed in under a minute.
+                Stop struggling with the learning curve of apps like Inkscape. Go from photo to laser bed in under a minute.
               </motion.p>
               <motion.div variants={fade} custom={2}>
                 <Link
