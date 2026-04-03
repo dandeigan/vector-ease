@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     // Low precision + high layer difference since image is already quantized
     const config: Config = {
       colorMode: ColorMode_Color,
-      hierarchical: Hierarchical_Stacked,
+      hierarchical: 1, // Cutout mode — each shape is self-contained, no stacking dependency
       filterSpeckle: 8,
       colorPrecision: 3,        // Low — image already has exact colors from quantization
       layerDifference: 25,      // Higher — merge any VTracer artifacts aggressively
