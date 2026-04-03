@@ -3,7 +3,7 @@
 import { useAuth } from "@/components/auth/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut, ShieldCheck, Clock, Zap } from "lucide-react";
+import { LogOut, ShieldCheck, Clock, Zap, Settings } from "lucide-react";
 import Workspace from "@/components/editor/Workspace";
 import UpgradeButton from "@/components/UpgradeButton";
 
@@ -56,6 +56,13 @@ export default function DashboardPage() {
               </button>
             )}
             <span className="text-xs text-foreground-muted hidden md:block truncate max-w-[200px]">{user.email}</span>
+            <button
+              onClick={() => router.push("/settings")}
+              className="p-2 rounded-lg hover:bg-dd-gold-400/10 text-foreground-muted hover:text-dd-gold-400 transition-all duration-200"
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
             <button
               onClick={logout}
               className="p-2 rounded-lg hover:bg-dd-gold-400/10 text-foreground-muted hover:text-dd-gold-400 transition-all duration-200"
