@@ -32,11 +32,14 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
     const trialEnd = new Date();
     trialEnd.setDate(trialEnd.getDate() + 30);
 
+    const userName = displayName || email.split("@")[0];
+    const userPhone = phone || "";
+
     await setDoc(ref, {
       uid,
       email,
-      displayName: displayName || email.split("@")[0],
-      phone: phone || "",
+      displayName: userName,
+      phone: userPhone,
       role: "user",
       subscriptionStatus: "trial",
       totalVectorizations: 0,
@@ -44,6 +47,26 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
       lastLoginAt: serverTimestamp(),
       trialExpiresAt: Timestamp.fromDate(trialEnd),
     });
+
+    // Add new signup to Brevo email marketing
+    try {
+      fetch("https://api.brevo.com/v3/contacts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": process.env.NEXT_PUBLIC_BREVO_API_KEY || "",
+        },
+        body: JSON.stringify({
+          email,
+          attributes: {
+            FIRSTNAME: userName.split(" ")[0],
+            LASTNAME: userName.split(" ").slice(1).join(" "),
+            SMS: userPhone,
+          },
+          updateEnabled: true,
+        }),
+      }).catch(() => {});
+    } catch {}
   } else {
     // Returning user — update last login
     await updateDoc(ref, { lastLoginAt: serverTimestamp() });
