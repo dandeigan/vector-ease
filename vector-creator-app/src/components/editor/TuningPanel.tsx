@@ -318,6 +318,17 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           <Download className="w-3.5 h-3.5" />
           Export DXF
         </button>
+
+        {/* LightBurn mode cheat sheet */}
+        <div className="mt-3 rounded-lg border border-border bg-background/40 p-3 text-[11px] text-foreground-muted leading-relaxed">
+          <p className="font-semibold text-foreground mb-1.5">Using this in LightBurn?</p>
+          <p>Set each layer&rsquo;s mode in the <span className="text-foreground">Cuts / Layers</span> panel:</p>
+          <ul className="mt-1.5 space-y-0.5">
+            <li><span className="text-dd-gold-400 font-medium">Line</span> &mdash; cuts through / scores the outline</li>
+            <li><span className="text-dd-gold-400 font-medium">Fill</span> &mdash; engraves the filled region</li>
+            <li><span className="text-dd-gold-400 font-medium">Offset Fill</span> &mdash; smoother spiral engrave</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

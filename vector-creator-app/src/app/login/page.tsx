@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,8 +13,24 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const handleForgotPassword = async () => {
+    setError("");
+    setResetMessage("");
+    if (!email) {
+      setError("Enter your email above, then click Forgot password.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetMessage("Password reset email sent. Check your inbox.");
+    } catch (err: any) {
+      setError(err.message?.replace("Firebase: ", "").replace(/\(auth\/.*\)/, "").trim() || "Could not send reset email");
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +97,12 @@ export default function LoginPage() {
             </div>
           )}
 
+          {resetMessage && (
+            <div className="bg-green-500/8 border border-green-500/15 text-green-400 p-3 rounded-lg mb-5 text-xs">
+              {resetMessage}
+            </div>
+          )}
+
           <form onSubmit={handleAuth} className="space-y-4">
             {/* Full Name — signup only */}
             {!isLogin && (
@@ -129,7 +151,18 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-foreground-muted mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-foreground-muted">Password</label>
+                {isLogin && (
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-xs text-dd-gold-400 hover:text-dd-gold-300 font-medium transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <input
                 type="password"
                 required
