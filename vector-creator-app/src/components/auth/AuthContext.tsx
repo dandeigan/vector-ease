@@ -21,7 +21,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   isSuperAdmin: false,
   trialExpired: false,
-  trialDaysLeft: 30,
+  trialDaysLeft: 15,
   logout: async () => {},
 });
 
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isSuperAdmin = userRecord?.role === "superadmin";
   const trialExpired = userRecord ? isTrialExpired(userRecord) : false;
-  const trialDaysLeft = userRecord ? getTrialDaysRemaining(userRecord) : 30;
+  const trialDaysLeft = userRecord ? getTrialDaysRemaining(userRecord) : 15;
 
   return (
     <AuthContext.Provider value={{ user, userRecord, loading, isSuperAdmin, trialExpired, trialDaysLeft, logout }}>

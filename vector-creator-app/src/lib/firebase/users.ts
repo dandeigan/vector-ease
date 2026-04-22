@@ -28,9 +28,9 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
   const snap = await getDoc(ref);
 
   if (!snap.exists()) {
-    // First-time user — 30-day trial
+    // First-time user — 15-day trial
     const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 30);
+    trialEnd.setDate(trialEnd.getDate() + 15);
 
     const userName = displayName || email.split("@")[0];
     const userPhone = phone || "";

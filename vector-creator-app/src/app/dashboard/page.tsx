@@ -94,7 +94,7 @@ export default function DashboardPage() {
             </div>
             <h2 className="text-2xl font-bold mb-2">Trial Ended</h2>
             <p className="text-foreground-muted text-sm mb-6">
-              Your 30-day free trial has expired. Upgrade to VectorEase Pro to continue creating laser-ready vectors.
+              Your 15-day free trial has expired. Upgrade to VectorEase Pro to continue creating laser-ready vectors.
             </p>
             <UpgradeButton />
           </div>

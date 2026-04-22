@@ -184,7 +184,7 @@ export default function LoginPage() {
               ) : isLogin ? (
                 "Sign In"
               ) : (
-                "Start 30-Day Free Trial"
+                "Start 15-Day Free Trial"
               )}
             </button>
           </form>
