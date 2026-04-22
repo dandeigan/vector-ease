@@ -1,9 +1,17 @@
 import { create } from "zustand";
+import type { LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 
 export interface PaletteColor {
   r: number;
   g: number;
   b: number;
+}
+
+export interface LayerSettings {
+  name: string;
+  mode: LightBurnMode;
+  speedMmMin: number;
+  powerPct: number;
 }
 
 export interface TracingOptions {
@@ -47,6 +55,11 @@ interface EditorState {
   resultSvg: string | null;
   setResultSvg: (svg: string | null) => void;
 
+  // Per-layer LightBurn export settings (keyed by uppercase hex color)
+  layerSettings: Record<string, LayerSettings>;
+  updateLayerSettings: (color: string, patch: Partial<LayerSettings>) => void;
+  ensureLayerSettings: (color: string, defaults: LayerSettings) => void;
+
   // Global actions
   resetWorkspace: () => void;
 }
@@ -66,10 +79,31 @@ export const useEditorStore = create<EditorState>((set) => ({
   resultSvg: null,
   setResultSvg: (svg) => set({ resultSvg: svg }),
 
+  layerSettings: {},
+  updateLayerSettings: (color, patch) =>
+    set((state) => {
+      const key = color.toUpperCase();
+      const current = state.layerSettings[key];
+      if (!current) return state;
+      return {
+        layerSettings: {
+          ...state.layerSettings,
+          [key]: { ...current, ...patch },
+        },
+      };
+    }),
+  ensureLayerSettings: (color, defaults) =>
+    set((state) => {
+      const key = color.toUpperCase();
+      if (state.layerSettings[key]) return state;
+      return { layerSettings: { ...state.layerSettings, [key]: defaults } };
+    }),
+
   resetWorkspace: () => set({
     originalImage: null,
     resultSvg: null,
     isProcessing: false,
-    options: defaultOptions
+    options: defaultOptions,
+    layerSettings: {},
   }),
 }));

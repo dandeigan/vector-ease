@@ -1,9 +1,10 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff } from "lucide-react";
+import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
+import { svgToLbrn2, defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 
 interface TuningPanelProps {
   onTraceTrigger: () => void;
@@ -70,10 +71,23 @@ function colorName(hex: string): string {
 }
 
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
-  const { options, setOptions, resultSvg } = useEditorStore();
+  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings } = useEditorStore();
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
 
   const layers = useMemo(() => (resultSvg ? parseLayers(resultSvg) : []), [resultSvg]);
+
+  // Seed LightBurn settings for any newly-discovered color layer
+  useEffect(() => {
+    layers.forEach((layer) => {
+      const preset = defaultPresetForMode("Line");
+      ensureLayerSettings(layer.color, {
+        name: colorName(layer.color),
+        mode: "Line",
+        speedMmMin: preset.speedMmMin,
+        powerPct: preset.powerPct,
+      });
+    });
+  }, [layers, ensureLayerSettings]);
 
   // Sync filtered SVG to parent whenever hiddenLayers changes
   useEffect(() => {
@@ -124,6 +138,33 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
     const a = document.createElement("a");
     a.href = url;
     a.download = "vectorease-output.svg";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadLbrn2 = () => {
+    const svg = getExportSvg();
+    if (!svg) return;
+    const visibleLayers = layers.filter((l) => !hiddenLayers.has(l.color));
+    const layerConfigs = visibleLayers.map((l) => {
+      const s = layerSettings[l.color.toUpperCase()];
+      const preset = defaultPresetForMode("Line");
+      return {
+        color: l.color,
+        name: s?.name ?? colorName(l.color),
+        mode: s?.mode ?? "Line",
+        speedMmMin: s?.speedMmMin ?? preset.speedMmMin,
+        powerPct: s?.powerPct ?? preset.powerPct,
+      };
+    });
+    const lbrn = svgToLbrn2(svg, { layers: layerConfigs });
+    const blob = new Blob([lbrn], { type: "application/xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "vectorease-output.lbrn2";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -237,40 +278,89 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
               </button>
             )}
           </div>
-          <div className="px-4 pb-4 space-y-1">
+          <div className="px-4 pb-4 space-y-2">
             {layers.map((layer) => {
               const isHidden = hiddenLayers.has(layer.color);
+              const key = layer.color.toUpperCase();
+              const settings = layerSettings[key];
+              const handleModeChange = (mode: LightBurnMode) => {
+                const preset = defaultPresetForMode(mode);
+                updateLayerSettings(layer.color, { mode, speedMmMin: preset.speedMmMin, powerPct: preset.powerPct });
+              };
               return (
                 <div
                   key={layer.color}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 group cursor-pointer ${
-                    isHidden
-                      ? "opacity-35"
-                      : "bg-background-overlay/50 hover:bg-background-overlay"
+                  className={`px-3 py-2.5 rounded-lg transition-all duration-150 ${
+                    isHidden ? "opacity-35 bg-background-overlay/30" : "bg-background-overlay/50"
                   }`}
-                  onClick={() => toggleLayer(layer.color)}
                 >
-                  <div
-                    className="w-5 h-5 rounded-md border border-white/10 flex-shrink-0 shadow-sm"
-                    style={{ backgroundColor: layer.color }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium">{colorName(layer.color)}</span>
-                      <span className="text-[10px] font-mono text-foreground-muted">{layer.color}</span>
-                    </div>
-                    <span className="text-[10px] text-foreground-muted">{layer.pathCount} paths</span>
+                  {/* Row 1 — swatch + name input + visibility toggles */}
+                  <div className="flex items-center gap-2.5 group">
+                    <div
+                      className="w-5 h-5 rounded-md border border-white/10 flex-shrink-0 shadow-sm"
+                      style={{ backgroundColor: layer.color }}
+                    />
+                    <input
+                      type="text"
+                      value={settings?.name ?? colorName(layer.color)}
+                      onChange={(e) => updateLayerSettings(layer.color, { name: e.target.value })}
+                      className="flex-1 min-w-0 bg-transparent text-xs font-medium focus:outline-none focus:ring-1 focus:ring-dd-gold-400/30 rounded px-1 py-0.5"
+                      placeholder="Layer name"
+                    />
+                    <span className="text-[10px] font-mono text-foreground-muted flex-shrink-0">{layer.color}</span>
+                    <button
+                      onClick={() => isolateLayer(layer.color)}
+                      className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider text-foreground-muted hover:text-dd-gold-400 hover:bg-dd-gold-400/10 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      Solo
+                    </button>
+                    <button
+                      onClick={() => toggleLayer(layer.color)}
+                      className="flex-shrink-0"
+                      title={isHidden ? "Show layer" : "Hide layer"}
+                    >
+                      {isHidden ? (
+                        <EyeOff className="w-3.5 h-3.5 text-foreground-muted" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5 text-foreground-muted hover:text-dd-blue-400 transition-colors" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); isolateLayer(layer.color); }}
-                    className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider text-foreground-muted hover:text-dd-gold-400 hover:bg-dd-gold-400/10 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    Solo
-                  </button>
-                  {isHidden ? (
-                    <EyeOff className="w-3.5 h-3.5 text-foreground-muted flex-shrink-0" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5 text-foreground-muted group-hover:text-dd-blue-400 transition-colors flex-shrink-0" />
+
+                  {/* Row 2 — LightBurn export settings */}
+                  {settings && (
+                    <div className="flex items-center gap-2 mt-2 pl-7.5" style={{ paddingLeft: "1.875rem" }}>
+                      <select
+                        value={settings.mode}
+                        onChange={(e) => handleModeChange(e.target.value as LightBurnMode)}
+                        className="bg-background border border-border rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-dd-gold-400/50"
+                      >
+                        <option value="Line">Line</option>
+                        <option value="Fill">Fill</option>
+                        <option value="Offset Fill">Offset Fill</option>
+                      </select>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={settings.speedMmMin}
+                          onChange={(e) => updateLayerSettings(layer.color, { speedMmMin: Math.max(1, parseInt(e.target.value) || 0) })}
+                          className="w-14 bg-background border border-border rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-dd-gold-400/50"
+                        />
+                        <span className="text-[9px] text-foreground-muted">mm/m</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={settings.powerPct}
+                          onChange={(e) => updateLayerSettings(layer.color, { powerPct: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })}
+                          className="w-10 bg-background border border-border rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-dd-gold-400/50"
+                        />
+                        <span className="text-[9px] text-foreground-muted">%</span>
+                      </div>
+                      <span className="text-[9px] text-foreground-muted ml-auto">{layer.pathCount} paths</span>
+                    </div>
                   )}
                 </div>
               );
@@ -304,10 +394,22 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
       <div className="px-5 py-4 border-t border-border space-y-2">
         <button
           disabled={!resultSvg}
-          onClick={handleDownloadSVG}
-          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 bg-dd-blue-500 hover:bg-dd-blue-400 text-white shadow-lg hover:shadow-xl disabled:opacity-30 disabled:shadow-none glow-blue hover:scale-[1.01]"
+          onClick={handleDownloadLbrn2}
+          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg hover:shadow-xl disabled:opacity-30 disabled:shadow-none glow-gold-strong hover:scale-[1.01]"
         >
-          <Download className="w-4 h-4" />
+          <Flame className="w-4 h-4" />
+          Export for LightBurn (.lbrn2)
+        </button>
+        <p className="text-[10px] text-foreground-muted text-center -mt-1">
+          Opens in LightBurn with layer names, modes, speed &amp; power already set
+        </p>
+
+        <button
+          disabled={!resultSvg}
+          onClick={handleDownloadSVG}
+          className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all duration-200 disabled:opacity-30 mt-2"
+        >
+          <Download className="w-3.5 h-3.5" />
           Export Layered SVG
         </button>
         <button
@@ -318,17 +420,6 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           <Download className="w-3.5 h-3.5" />
           Export DXF
         </button>
-
-        {/* LightBurn mode cheat sheet */}
-        <div className="mt-3 rounded-lg border border-border bg-background/40 p-3 text-[11px] text-foreground-muted leading-relaxed">
-          <p className="font-semibold text-foreground mb-1.5">Using this in LightBurn?</p>
-          <p>Set each layer&rsquo;s mode in the <span className="text-foreground">Cuts / Layers</span> panel:</p>
-          <ul className="mt-1.5 space-y-0.5">
-            <li><span className="text-dd-gold-400 font-medium">Line</span> &mdash; cuts through / scores the outline</li>
-            <li><span className="text-dd-gold-400 font-medium">Fill</span> &mdash; engraves the filled region</li>
-            <li><span className="text-dd-gold-400 font-medium">Offset Fill</span> &mdash; smoother spiral engrave</li>
-          </ul>
-        </div>
       </div>
     </div>
   );
