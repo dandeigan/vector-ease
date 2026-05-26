@@ -10,7 +10,6 @@ export interface UserRecord {
   uid: string;
   email: string;
   displayName: string;
-  phone: string;
   role: "user" | "superadmin";
   subscriptionStatus: "active" | "expired" | "trial" | "none";
   totalVectorizations: number;
@@ -23,7 +22,7 @@ const USERS = "users";
 const VECTORIZATIONS = "vectorizations";
 
 /** Create or update user doc on login/signup */
-export async function syncUserToFirestore(uid: string, email: string, displayName?: string, phone?: string) {
+export async function syncUserToFirestore(uid: string, email: string, displayName?: string) {
   const ref = doc(db, USERS, uid);
   const snap = await getDoc(ref);
 
@@ -33,13 +32,11 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
     trialEnd.setDate(trialEnd.getDate() + 15);
 
     const userName = displayName || email.split("@")[0];
-    const userPhone = phone || "";
 
     await setDoc(ref, {
       uid,
       email,
       displayName: userName,
-      phone: userPhone,
       role: "user",
       subscriptionStatus: "trial",
       totalVectorizations: 0,
@@ -61,7 +58,6 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
           attributes: {
             FIRSTNAME: userName.split(" ")[0],
             LASTNAME: userName.split(" ").slice(1).join(" "),
-            SMS: userPhone,
           },
           updateEnabled: true,
         }),

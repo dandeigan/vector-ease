@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F9C34E"/>
+      <stop offset="50%" stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#C47206"/>
+    </linearGradient>
+    <linearGradient id="goldText" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDD889"/>
+      <stop offset="50%" stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#E08E0B"/>
+    </linearGradient>
+    <radialGradient id="goldGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#F5A623" stop-opacity="0.15"/>
+      <stop offset="60%" stop-color="#F5A623" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#F5A623" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2567B2" stop-opacity="0.12"/>
+      <stop offset="60%" stop-color="#2567B2" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#2567B2" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#F5A623" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#080B12"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Glow effects -->
+  <ellipse cx="900" cy="200" rx="400" ry="300" fill="url(#goldGlow)"/>
+  <ellipse cx="200" cy="500" rx="350" ry="250" fill="url(#blueGlow)"/>
+
+  <!-- Eyebrow pill -->
+  <g transform="translate(80, 110)">
+    <rect x="0" y="0" width="280" height="36" rx="18" ry="18" fill="#F5A623" fill-opacity="0.1" stroke="#F5A623" stroke-opacity="0.25" stroke-width="1"/>
+    <circle cx="20" cy="18" r="4" fill="#F5A623"/>
+    <text x="36" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Inter', Arial, sans-serif" font-size="13" font-weight="600" letter-spacing="1.8" fill="#F5A623">BUILT FOR LASER CREATORS</text>
+  </g>
+
+  <!-- Headline -->
+  <text x="80" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Inter', Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="-2" fill="#F0F2F5">
+    <tspan x="80" dy="0">Image to laser-ready</tspan>
+    <tspan x="80" dy="92" fill="url(#goldText)">vector</tspan><tspan fill="#F0F2F5"> in seconds.</tspan>
+  </text>
+
+  <!-- Subhead -->
+  <text x="80" y="430" font-family="-apple-system, BlinkMacSystemFont, 'Inter', Arial, sans-serif" font-size="26" font-weight="400" fill="#6B7A90" letter-spacing="-0.3">
+    <tspan x="80" dy="0">No Inkscape. No tracing. No tutorials.</tspan>
+    <tspan x="80" dy="38">Just upload, click, and cut.</tspan>
+  </text>
+
+  <!-- Logo lockup bottom-left -->
+  <g transform="translate(80, 540)">
+    <rect width="50" height="50" rx="11" ry="11" fill="url(#goldGrad)"/>
+    <path d="M14 14 L25 38 L36 14" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="65" y="35" font-family="-apple-system, BlinkMacSystemFont, 'Inter', Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.5">
+      <tspan fill="#F0F2F5">Vector</tspan><tspan fill="url(#goldText)">Ease</tspan>
+    </text>
+  </g>
+
+  <!-- URL bottom-right -->
+  <text x="1120" y="572" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Inter', Arial, sans-serif" font-size="20" font-weight="500" fill="#6B7A90" letter-spacing="0.3">vectorease.com</text>
+</svg>

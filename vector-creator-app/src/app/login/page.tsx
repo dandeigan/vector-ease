@@ -10,7 +10,6 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetMessage, setResetMessage] = useState("");
@@ -132,23 +131,6 @@ export default function LoginPage() {
                 placeholder="you@domain.com"
               />
             </div>
-
-            {/* Phone — signup only, optional */}
-            {!isLogin && (
-              <div>
-                <label className="block text-xs font-medium text-foreground-muted mb-1.5">
-                  Phone Number <span className="text-foreground-muted/50">(optional)</span>
-                </label>
-                <input
-                  type="tel"
-                  autoComplete="tel"
-                  className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all placeholder:text-foreground-muted/40"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 (555) 123-4567"
-                />
-              </div>
-            )}
 
             <div>
               <div className="flex items-center justify-between mb-1.5">

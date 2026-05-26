@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F9C34E"/>
+      <stop offset="50%" stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#C47206"/>
+    </linearGradient>
+    <linearGradient id="goldText" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDD889"/>
+      <stop offset="50%" stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#E08E0B"/>
+    </linearGradient>
+  </defs>
+  <!-- V-mark in gold square -->
+  <rect x="8" y="16" width="48" height="48" rx="10" ry="10" fill="url(#goldGrad)"/>
+  <path d="M20 28 L32 52 L44 28" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Wordmark -->
+  <text x="72" y="52" font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Arial, sans-serif" font-size="32" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#F0F2F5">Vector</tspan><tspan fill="url(#goldText)">Ease</tspan>
+  </text>
+</svg>

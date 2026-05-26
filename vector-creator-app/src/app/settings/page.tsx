@@ -7,7 +7,7 @@ import { updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCre
 import { auth } from "@/lib/firebase/config";
 import { updateUserRecord } from "@/lib/firebase/users";
 import {
-  ArrowLeft, Camera, User, Phone, Lock, CreditCard,
+  ArrowLeft, Camera, User, Lock, CreditCard,
   Calendar, Zap, Check, AlertCircle,
 } from "lucide-react";
 
@@ -17,7 +17,6 @@ export default function SettingsPage() {
 
   // Profile state
   const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -38,7 +37,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (userRecord) {
       setFullName(userRecord.displayName || "");
-      setPhone(userRecord.phone || "");
     }
     if (user?.photoURL) {
       setPhotoURL(user.photoURL);
@@ -50,7 +48,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await updateProfile(user, { displayName: fullName });
-      await updateUserRecord(user.uid, { displayName: fullName, phone });
+      await updateUserRecord(user.uid, { displayName: fullName });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -197,16 +195,6 @@ export default function SettingsPage() {
                 value={user.email || ""}
                 disabled
                 className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-foreground-muted cursor-not-allowed opacity-60"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-foreground-muted mb-1.5">Phone Number</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-dd-gold-400/50 focus:ring-1 focus:ring-dd-gold-400/20 transition-all"
-                placeholder="+1 (555) 123-4567"
               />
             </div>
           </div>
