@@ -183,6 +183,32 @@ export default function LoginPage() {
             </button>
           </div>
         </div>
+
+        {/* Founders Club Callout */}
+        <div className="hidden xl:block absolute left-[420px] bottom-[24px] w-[320px] pointer-events-none select-none">
+          <div 
+            className="text-[#EF4444] font-marker text-2xl leading-tight -rotate-3 max-w-[320px]"
+            style={{ fontFamily: 'var(--font-permanent-marker)' }}
+          >
+            Not a member yet? Start your free trial. Founders Club locks in LIFETIME access when it ends.
+          </div>
+          <div className="relative mt-2 h-[120px] w-[200px] ml-4">
+            <svg 
+              width="160" 
+              height="120" 
+              viewBox="0 0 160 120" 
+              fill="none" 
+              stroke="#EF4444" 
+              strokeWidth="4" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              className="absolute left-[-32px] top-0 transform rotate-[12deg]"
+            >
+              <path d="M 130 15 C 95 45, 55 75, 20 85" />
+              <path d="M 35 68 L 18 85 L 35 98" />
+            </svg>
+          </div>
+        </div>
       </div>
     </div>
   );

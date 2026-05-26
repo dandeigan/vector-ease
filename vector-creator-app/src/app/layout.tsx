@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Permanent_Marker } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { AuthProvider } from "@/components/auth/AuthContext";
 
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+const permanentMarker = Permanent_Marker({
+  weight: "400",
+  variable: "--font-permanent-marker",
   subsets: ["latin"],
 });
 
@@ -49,7 +55,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${permanentMarker.variable} font-sans antialiased`}>
         <AuthProvider>
           <Providers>
             {children}

@@ -91,6 +91,7 @@
   --color-glow-blue-strong: var(--glow-blue-strong);
 
   --font-sans: var(--font-inter);
+  --font-marker: var(--font-permanent-marker);
 }
 
 /* ── Base ── */
