@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if the user is logged in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if the user is accessing their own data
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if the user is a superadmin
+    function isSuperAdmin() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // Users can read and write their own profile
+      // Superadmins can read and write all profiles
+      allow read, write: if isOwner(userId) || isSuperAdmin();
+    }
+    
+    // Rules for the 'vectorizations' collection
+    match /vectorizations/{vectorizationId} {
+      // Users can log vectorization events under their own ID
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Superadmins can read/list vectorization statistics
+      allow read, list: if isSuperAdmin();
+    }
+  }
+}

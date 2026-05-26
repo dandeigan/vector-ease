@@ -16,7 +16,7 @@ const permanentMarker = Permanent_Marker({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://vectorease.com"),
+  metadataBase: new URL("https://app.vectorease.com"),
   title: "VectorEase | Image to Laser-Ready Vector in Seconds",
   description: "Convert any photo into layered SVGs optimized for LightBurn and Falcon Pro. Upload, tune your layers, and cut. No tracing skills required.",
   icons: {
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "VectorEase | Image to Laser-Ready Vector in Seconds",
     description: "Convert any photo into layered SVGs optimized for LightBurn and Falcon Pro. Upload, tune your layers, and cut. No tracing skills required.",
-    url: "https://vectorease.com",
+    url: "https://app.vectorease.com",
     siteName: "VectorEase",
     images: [
       {

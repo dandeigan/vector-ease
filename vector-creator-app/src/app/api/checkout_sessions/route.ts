@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
           price_data: {
             currency: "usd",
             product_data: {
-              name: "Vector Creator Pro License",
-              description: "Full access to raster vectorization and background removal tools.",
+              name: "VectorEase Lifetime",
+              description: "Lifetime access to VectorEase. Image-to-vector conversion for laser creators. One-time payment, no subscription.",
             },
             unit_amount: 8500, // $85.00
           },
