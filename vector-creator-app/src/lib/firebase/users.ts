@@ -45,21 +45,17 @@ export async function syncUserToFirestore(uid: string, email: string, displayNam
       trialExpiresAt: Timestamp.fromDate(trialEnd),
     });
 
-    // Add new signup to Brevo email marketing
+    // Add new signup to Brevo email marketing.
+    // Calls our server-side API route so the Brevo API key stays server-only.
+    // Fire-and-forget — never block signup on Brevo failures.
     try {
-      fetch("https://api.brevo.com/v3/contacts", {
+      fetch("/api/brevo-signup", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": process.env.NEXT_PUBLIC_BREVO_API_KEY || "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          attributes: {
-            FIRSTNAME: userName.split(" ")[0],
-            LASTNAME: userName.split(" ").slice(1).join(" "),
-          },
-          updateEnabled: true,
+          firstName: userName.split(" ")[0],
+          lastName: userName.split(" ").slice(1).join(" "),
         }),
       }).catch(() => {});
     } catch {}
