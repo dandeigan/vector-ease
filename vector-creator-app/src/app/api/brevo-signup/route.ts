@@ -14,6 +14,9 @@ import { NextRequest, NextResponse } from "next/server";
 // Basic email format check — keeps obvious garbage out of Brevo.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Brevo list ID for "VectorEase Trial Users" — drives the trial email automation.
+const TRIAL_LIST_ID = 7;
+
 export async function POST(req: NextRequest) {
   let payload: { email?: unknown; firstName?: unknown; lastName?: unknown };
 
@@ -51,8 +54,10 @@ export async function POST(req: NextRequest) {
         attributes: {
           FIRSTNAME: firstName,
           LASTNAME: lastName,
+          VECTORIZATIONS_USED: 0, // initial count — drives trial email automation triggers
         },
-        updateEnabled: true,
+        listIds: [TRIAL_LIST_ID], // add to "VectorEase Trial Users" list immediately
+        updateEnabled: true, // upsert behavior so existing contacts get attributes updated, not rejected
       }),
     });
 

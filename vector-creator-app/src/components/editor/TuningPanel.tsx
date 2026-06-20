@@ -5,6 +5,13 @@ import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame } from "lucid
 import { useEffect, useMemo, useState } from "react";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 import { svgToLbrn2, defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
+import { useAuth } from "@/components/auth/AuthContext";
+import {
+  computeImageFingerprint,
+  evaluateDownload,
+  markImageDownloaded,
+  getVectorizationsRemaining,
+} from "@/lib/firebase/users";
 
 interface TuningPanelProps {
   onTraceTrigger: () => void;
@@ -71,8 +78,15 @@ function colorName(hex: string): string {
 }
 
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
-  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings } = useEditorStore();
+  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, originalImage } = useEditorStore();
+  const { user, userRecord } = useAuth();
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const remaining = userRecord ? getVectorizationsRemaining(userRecord) : 0;
+  const isPaidOrAdmin =
+    userRecord?.role === "superadmin" || userRecord?.subscriptionStatus === "active";
 
   const layers = useMemo(() => (resultSvg ? parseLayers(resultSvg) : []), [resultSvg]);
 
@@ -128,6 +142,43 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
         return hiddenLayers.has(hex) ? "" : full;
       }
     );
+  };
+
+  /**
+   * Gate every download through the quota check.
+   * - Multi-format downloads of the same source image count as 1 (deduped by SHA-256 fingerprint).
+   * - When the quota is exhausted, opens the paywall modal and aborts the download.
+   * - Superadmins and paid users bypass all gating.
+   * - Brevo VECTORIZATIONS_USED attribute is updated in the background after a decrement.
+   */
+  const gatedDownload = async (downloadFn: () => void) => {
+    if (isDownloading) return;
+    if (!user || !user.email || !userRecord || !originalImage) {
+      // Safety: if context is missing, fall back to the raw download (don't block user).
+      downloadFn();
+      return;
+    }
+    setIsDownloading(true);
+    try {
+      const fingerprint = await computeImageFingerprint(originalImage);
+      const decision = evaluateDownload(userRecord, fingerprint);
+
+      if (!decision.allow) {
+        setShowPaywall(true);
+        return;
+      }
+
+      downloadFn();
+
+      if (!decision.alreadyDownloaded) {
+        // Persist decrement + push updated count to Brevo. Fire-and-forget — the download already happened.
+        markImageDownloaded(user.uid, user.email, fingerprint).catch((err) =>
+          console.error("[gatedDownload] markImageDownloaded failed", err)
+        );
+      }
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleDownloadSVG = () => {
@@ -392,9 +443,20 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
 
       {/* ── Export ── */}
       <div className="px-5 py-4 border-t border-border space-y-2">
+        {/* Quota counter — only shown for trial users */}
+        {!isPaidOrAdmin && userRecord && (
+          <div className="flex items-center justify-between mb-2 px-1">
+            <span className="text-[10px] uppercase tracking-wider text-foreground-muted font-medium">
+              Free Trial
+            </span>
+            <span className={`text-[11px] font-bold ${remaining <= 1 ? "text-dd-gold-400" : "text-foreground-muted"}`}>
+              {remaining} of 5 left
+            </span>
+          </div>
+        )}
         <button
-          disabled={!resultSvg}
-          onClick={handleDownloadLbrn2}
+          disabled={!resultSvg || isDownloading}
+          onClick={() => gatedDownload(handleDownloadLbrn2)}
           className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg hover:shadow-xl disabled:opacity-30 disabled:shadow-none glow-gold-strong hover:scale-[1.01]"
         >
           <Flame className="w-4 h-4" />
@@ -405,22 +467,52 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
         </p>
 
         <button
-          disabled={!resultSvg}
-          onClick={handleDownloadSVG}
+          disabled={!resultSvg || isDownloading}
+          onClick={() => gatedDownload(handleDownloadSVG)}
           className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all duration-200 disabled:opacity-30 mt-2"
         >
           <Download className="w-3.5 h-3.5" />
           Export Layered SVG
         </button>
         <button
-          disabled={!resultSvg}
-          onClick={handleDownloadDXF}
+          disabled={!resultSvg || isDownloading}
+          onClick={() => gatedDownload(handleDownloadDXF)}
           className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-gold-400/30 hover:text-dd-gold-400 transition-all duration-200 disabled:opacity-30"
         >
           <Download className="w-3.5 h-3.5" />
           Export DXF
         </button>
       </div>
+
+      {/* ── Paywall Modal (Founder's Lifetime Deal upsell) ── */}
+      {showPaywall && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
+          <div className="max-w-md w-full rounded-2xl border border-dd-gold-400/30 bg-card p-8 glow-gold-strong">
+            <div className="w-14 h-14 rounded-2xl bg-dd-gold-400/10 text-dd-gold-400 flex items-center justify-center mb-5 mx-auto">
+              <Flame className="w-7 h-7" />
+            </div>
+            <h3 className="text-2xl font-bold text-center mb-2">You've used your 5 free vectorizations</h3>
+            <p className="text-sm text-foreground-muted text-center mb-6 leading-relaxed">
+              If VectorEase saved you time, the Founder's Lifetime Deal locks in $39 USD forever.
+              No subscription. Capped at 100 customers, then $79.
+            </p>
+            <a
+              href="https://vectorease.com/lifetime-deal"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full py-3 rounded-xl text-sm font-semibold text-center bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:scale-[1.01] transition-all duration-200"
+            >
+              Claim Founder Seat — $39
+            </a>
+            <button
+              onClick={() => setShowPaywall(false)}
+              className="block w-full mt-3 py-2 text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
