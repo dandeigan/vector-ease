@@ -17,26 +17,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Identify the payment intent or session config. We aim for a one-time $85 payment.
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
+    // Use the Stripe Price ID configured in Vercel env (STRIPE_PRICE_ID_FOUNDER)
+    // so we can change the price from $39 (Founder) to $79 (Standard) without a code deploy.
+    // Falls back to inline $39 price_data if env var isn't set yet.
+    const founderPriceId = process.env.STRIPE_PRICE_ID_FOUNDER;
+
+    const lineItem = founderPriceId
+      ? { price: founderPriceId, quantity: 1 }
+      : {
           price_data: {
             currency: "usd",
             product_data: {
-              name: "VectorEase Lifetime",
-              description: "Lifetime access to VectorEase. Image-to-vector conversion for laser creators. One-time payment, no subscription.",
+              name: "VectorEase Founder's Lifetime Deal",
+              description: "Lifetime access to VectorEase. Unlimited image-to-vector conversions for laser creators. All formats (SVG, DXF, LightBurn .lbrn2). One-time payment, no subscription. 30-day money-back guarantee.",
             },
-            unit_amount: 8500, // $85.00
+            unit_amount: 3900, // $39.00 — Founder pricing fallback
           },
           quantity: 1,
-        },
-      ],
+        };
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [lineItem as any],
       mode: "payment",
-      success_url: `${req.headers.get("origin")}/dashboard?success=true`,
-      cancel_url: `${req.headers.get("origin")}/`,
-      client_reference_id: userId, // Link this purchase to the Firebase User ID
+      success_url: `${req.headers.get("origin")}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.get("origin")}/dashboard?cancelled=true`,
+      client_reference_id: userId, // Link this purchase to the Firebase User ID; webhook reads this to mark account active.
     });
 
     return NextResponse.json({ id: session.id });

@@ -60,7 +60,7 @@ export default function UpgradeButton() {
       ) : (
         <Zap className="w-3 h-3" />
       )}
-      Upgrade to Pro — $85
+      Get Lifetime — $39
     </button>
   );
 }
