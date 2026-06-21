@@ -2,8 +2,9 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase/config";
-import { syncUserToFirestore, getUser, isTrialExpired, getTrialDaysRemaining, type UserRecord } from "@/lib/firebase/users";
+import { doc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/config";
+import { syncUserToFirestore, isTrialExpired, getTrialDaysRemaining, type UserRecord } from "@/lib/firebase/users";
 
 interface AuthContextType {
   user: User | null;
@@ -31,22 +32,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    // Live Firestore listener for the currently signed-in user's record.
+    // Re-bound whenever the auth state changes (new signin, signout, account switch).
+    // Without this, userRecord would be a one-time snapshot taken at signin and the
+    // 5-conversion gate would always see stale vectorizationsRemaining = 5 → never block.
+    let firestoreUnsubscribe: (() => void) | null = null;
+
+    const authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
 
-      if (currentUser) {
-        // Sync to Firestore and fetch role
-        await syncUserToFirestore(currentUser.uid, currentUser.email || "", currentUser.displayName || undefined);
-        const record = await getUser(currentUser.uid);
-        setUserRecord(record);
-      } else {
-        setUserRecord(null);
+      // Tear down any previous user's Firestore listener before binding a new one.
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe();
+        firestoreUnsubscribe = null;
       }
 
-      setLoading(false);
+      if (currentUser) {
+        // Create the user doc if first signin; no-op for returning users.
+        await syncUserToFirestore(currentUser.uid, currentUser.email || "", currentUser.displayName || undefined);
+
+        // Subscribe to live updates on this user's doc. Fires whenever any field
+        // changes (vectorizationsRemaining, downloadedImageFingerprints, role, etc.)
+        // — the dashboard badge, paywall modal, and gate check all auto-update.
+        const userRef = doc(db, "users", currentUser.uid);
+        firestoreUnsubscribe = onSnapshot(
+          userRef,
+          (snap) => {
+            setUserRecord(snap.exists() ? (snap.data() as UserRecord) : null);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("[AuthContext] Firestore listener error", err);
+            setLoading(false);
+          }
+        );
+      } else {
+        setUserRecord(null);
+        setLoading(false);
+      }
     });
 
-    return () => unsubscribe();
+    return () => {
+      authUnsubscribe();
+      if (firestoreUnsubscribe) firestoreUnsubscribe();
+    };
   }, []);
 
   const logout = async () => {
