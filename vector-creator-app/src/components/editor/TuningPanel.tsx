@@ -87,6 +87,39 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
   const remaining = userRecord ? getVectorizationsRemaining(userRecord) : 0;
   const isPaidOrAdmin =
     userRecord?.role === "superadmin" || userRecord?.subscriptionStatus === "active";
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  /**
+   * Trigger Stripe Checkout for the Founder's Lifetime Deal.
+   * Uses Stripe's session.url redirect pattern (post-2025-09-30 — replaced
+   * the deprecated stripe.redirectToCheckout()). Mirrors UpgradeButton.tsx.
+   */
+  const handleCheckout = async () => {
+    if (!user) return;
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/checkout_sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.uid }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        console.error("[paywall checkout] API error:", data.error);
+        setCheckoutLoading(false);
+        return;
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("[paywall checkout] No checkout URL returned from API");
+        setCheckoutLoading(false);
+      }
+    } catch (err) {
+      console.error("[paywall checkout] Failed:", err);
+      setCheckoutLoading(false);
+    }
+  };
 
   const layers = useMemo(() => (resultSvg ? parseLayers(resultSvg) : []), [resultSvg]);
 
@@ -496,14 +529,20 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
               If VectorEase saved you time, the Founder's Lifetime Deal locks in $39 USD forever.
               No subscription. Capped at 100 customers, then $79.
             </p>
-            <a
-              href="https://vectorease.com/lifetime-deal"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full py-3 rounded-xl text-sm font-semibold text-center bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:scale-[1.01] transition-all duration-200"
+            <button
+              onClick={handleCheckout}
+              disabled={checkoutLoading}
+              className="block w-full py-3 rounded-xl text-sm font-semibold text-center bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
             >
-              Claim Founder Seat — $39
-            </a>
+              {checkoutLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-[#080B12]/30 border-t-[#080B12] rounded-full animate-smooth-spin" />
+                  Opening checkout...
+                </>
+              ) : (
+                "Claim Founder Seat — $39"
+              )}
+            </button>
             <button
               onClick={() => setShowPaywall(false)}
               className="block w-full mt-3 py-2 text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors"

@@ -23,28 +23,21 @@ export default function UpgradeButton() {
       const data = await res.json();
 
       if (data.error) {
-        // Stripe not configured yet — silently skip
-        console.log("Stripe not configured:", data.error);
+        console.error("[UpgradeButton] Checkout session API error:", data.error);
         setLoading(false);
         return;
       }
 
-      // Redirect to Stripe Checkout
-      const { loadStripe } = await import("@stripe/stripe-js");
-      const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-      if (!publishableKey) {
-        console.log("Stripe publishable key not set");
+      // Redirect to Stripe Checkout using the session URL directly.
+      // stripe.redirectToCheckout() was deprecated 2025-09-30 — this is the new pattern.
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("[UpgradeButton] No checkout URL returned from API");
         setLoading(false);
-        return;
-      }
-
-      const stripe = await loadStripe(publishableKey);
-      if (stripe) {
-        await (stripe as any).redirectToCheckout({ sessionId: data.id });
       }
     } catch (err) {
-      console.error("Checkout failed:", err);
-    } finally {
+      console.error("[UpgradeButton] Checkout failed:", err);
       setLoading(false);
     }
   };

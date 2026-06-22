@@ -45,7 +45,10 @@ export async function POST(req: NextRequest) {
       client_reference_id: userId, // Link this purchase to the Firebase User ID; webhook reads this to mark account active.
     });
 
-    return NextResponse.json({ id: session.id });
+    // Return the session URL so the client can redirect directly to Stripe Checkout.
+    // Stripe deprecated stripe.redirectToCheckout() on 2025-09-30 in favor of using
+    // the session.url field. See: https://docs.stripe.com/changelog/clover/2025-09-30/remove-redirect-to-checkout
+    return NextResponse.json({ id: session.id, url: session.url });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
