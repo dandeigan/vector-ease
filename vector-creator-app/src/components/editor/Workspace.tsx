@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal } from "lucide-react";
+import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal, Sparkles, AlertTriangle } from "lucide-react";
 import { useRef, useState } from "react";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
@@ -211,6 +211,37 @@ export default function Workspace() {
             <div className="mt-6 flex items-center gap-2 text-xs text-foreground-muted">
               <ImageIcon className="w-3.5 h-3.5" />
               <span>Processed locally — your images never leave this device</span>
+            </div>
+
+            {/* Best-results guidance — helps users avoid common bad inputs (photos, watercolors, etc.)
+                that VTracer struggles with. Set expectations BEFORE upload, not after a muddy result. */}
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl px-4">
+              <div className="rounded-xl border border-dd-gold-400/20 bg-dd-gold-400/[0.04] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-dd-gold-400">Best Results</span>
+                </div>
+                <ul className="text-[11px] text-foreground-muted space-y-1 leading-relaxed">
+                  <li>• Clean logos & wordmarks</li>
+                  <li>• Silhouettes & simple shapes</li>
+                  <li>• Line art & hand-drawn sketches</li>
+                  <li>• High-contrast B&amp;W designs</li>
+                  <li>• Limited colors (2–6)</li>
+                </ul>
+              </div>
+              <div className="rounded-xl border border-dd-blue-400/20 bg-dd-blue-400/[0.04] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-dd-blue-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-dd-blue-400">Tougher Inputs</span>
+                </div>
+                <ul className="text-[11px] text-foreground-muted space-y-1 leading-relaxed">
+                  <li>• Photos of people or scenes</li>
+                  <li>• Watercolors &amp; soft gradients</li>
+                  <li>• Fine text on detailed shapes</li>
+                  <li>• Wood grain / textured backgrounds</li>
+                  <li>• Tip: try Remove Background first</li>
+                </ul>
+              </div>
             </div>
             <input
               type="file"

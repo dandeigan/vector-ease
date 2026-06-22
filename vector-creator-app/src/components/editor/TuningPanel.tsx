@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame } from "lucide-react";
+import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame, Sparkles, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 import { svgToLbrn2, defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
@@ -88,6 +88,28 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
   const isPaidOrAdmin =
     userRecord?.role === "superadmin" || userRecord?.subscriptionStatus === "active";
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  /**
+   * One-click presets for common input types.
+   * Each tunes the layer count + smoothness for the typical case.
+   * Users can still adjust manually below — these are just starting points.
+   */
+  const applyPreset = (preset: "logo" | "sticker" | "detail") => {
+    switch (preset) {
+      case "logo":
+        // Clean logos / wordmarks / simple silhouettes — few colors, smooth curves.
+        setOptions({ numberOfColors: 3, smoothness: 1, customPalette: null });
+        break;
+      case "sticker":
+        // Text-heavy stickers — angular preserves sharp letterforms; few colors.
+        setOptions({ numberOfColors: 3, smoothness: 0, customPalette: null });
+        break;
+      case "detail":
+        // Intricate designs — more layers preserve fine elements; smooth curves.
+        setOptions({ numberOfColors: 7, smoothness: 1, customPalette: null });
+        break;
+    }
+  };
 
   /**
    * Trigger Stripe Checkout for the Founder's Lifetime Deal.
@@ -280,6 +302,44 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
 
       {/* ── Controls ── */}
       <div className="px-5 py-5 space-y-6">
+        {/* Quick Presets — one-click starting points for common input types.
+            Saves users from manual tuning when they're unsure what to pick. */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-3">
+            <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-dd-gold-400">Quick Start</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              onClick={() => applyPreset("logo")}
+              disabled={disabled}
+              className="py-2 rounded-lg text-[11px] font-medium border border-border bg-background/40 text-foreground-muted hover:border-dd-gold-400/40 hover:text-dd-gold-400 hover:bg-dd-gold-400/[0.04] transition-all duration-150 disabled:opacity-30"
+              title="Clean logos, silhouettes, simple shapes"
+            >
+              Logo
+            </button>
+            <button
+              onClick={() => applyPreset("sticker")}
+              disabled={disabled}
+              className="py-2 rounded-lg text-[11px] font-medium border border-border bg-background/40 text-foreground-muted hover:border-dd-gold-400/40 hover:text-dd-gold-400 hover:bg-dd-gold-400/[0.04] transition-all duration-150 disabled:opacity-30"
+              title="Text-heavy stickers — preserves sharp letterforms"
+            >
+              Sticker
+            </button>
+            <button
+              onClick={() => applyPreset("detail")}
+              disabled={disabled}
+              className="py-2 rounded-lg text-[11px] font-medium border border-border bg-background/40 text-foreground-muted hover:border-dd-gold-400/40 hover:text-dd-gold-400 hover:bg-dd-gold-400/[0.04] transition-all duration-150 disabled:opacity-30"
+              title="Intricate designs with multiple elements"
+            >
+              Detail
+            </button>
+          </div>
+          <p className="text-[10px] text-foreground-muted mt-2 leading-relaxed">
+            Pick a starting point, then fine-tune below if needed.
+          </p>
+        </div>
+
         {/* Colors / Layers */}
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -473,6 +533,26 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           )}
         </button>
       </div>
+
+      {/* ── Quality Warning ── shown when result layer count is outside the sweet spot.
+          Helps users understand why a result looks bad without forcing them to download + see. */}
+      {resultSvg && (layers.length < 2 || layers.length > 15) && (
+        <div className="mx-5 mb-3 rounded-xl border border-dd-gold-400/30 bg-dd-gold-400/[0.05] p-3.5">
+          <div className="flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-dd-gold-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[11px] font-semibold text-dd-gold-400 mb-1">
+                {layers.length < 2 ? "Result looks too simple" : `${layers.length} layers detected — may be too many for clean laser output`}
+              </p>
+              <p className="text-[10px] text-foreground-muted leading-relaxed">
+                {layers.length < 2
+                  ? "Try a different image with more visible color contrast, or use the Detail preset above."
+                  : "Try the Logo or Sticker preset above to reduce layer count. Fewer layers = cleaner laser cuts."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Export ── */}
       <div className="px-5 py-4 border-t border-border space-y-2">
