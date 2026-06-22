@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Permanent_Marker } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { AuthProvider } from "@/components/auth/AuthContext";
@@ -61,6 +62,20 @@ export default function RootLayout({
             {children}
           </Providers>
         </AuthProvider>
+
+        {/* ChatBaser (Scale.gg) AI support widget — appears bottom-right on every page.
+            Strategy "afterInteractive" loads the script after the page is interactive,
+            so it never blocks initial render. Agent ID is the production VectorEase Support agent. */}
+        <Script id="chatbaser-widget" strategy="afterInteractive">
+          {`
+            (function(w,d,s,o,f,js,fjs){
+              w['GrooveChat']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
+              js=d.createElement(s);fjs=d.getElementsByTagName(s)[0];
+              js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
+            }(window,document,'script','groovechat','https://chatbaser.ai/widget.js'));
+            groovechat('init', '47ed0251-81d5-4341-b0be-23ff40c01630');
+          `}
+        </Script>
       </body>
     </html>
   );
