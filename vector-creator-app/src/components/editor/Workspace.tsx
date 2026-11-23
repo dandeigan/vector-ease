@@ -3,6 +3,8 @@
 import { useEditorStore } from "@/store/useEditorStore";
 import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal, Sparkles, AlertTriangle } from "lucide-react";
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { isStudioFile, setPendingStudioFiles } from "@/lib/studio/handoff";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
 import { detectImageColors, type DetectedColor } from "@/lib/vectorizer/color-detect";
@@ -12,6 +14,7 @@ import { logVectorization } from "@/lib/firebase/users";
 
 export default function Workspace() {
   const { user } = useAuth();
+  const router = useRouter();
   const {
     originalImage, setOriginalImage,
     isProcessing, setIsProcessing,
@@ -60,16 +63,26 @@ export default function Workspace() {
     reader.readAsDataURL(file);
   };
 
+  // Laser design files (.lac, .svg, .dxf) belong in the Studio, not the photo converter.
+  const sendToStudio = (file: File) => {
+    setPendingStudioFiles([file]);
+    router.push("/studio");
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    if (!file) return;
+    if (isStudioFile(file)) sendToStudio(file);
+    else handleFile(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith("image/")) handleFile(file);
+    if (!file) return;
+    if (isStudioFile(file)) sendToStudio(file);
+    else if (file.type.startsWith("image/")) handleFile(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -206,7 +219,7 @@ export default function Workspace() {
               {isDragging ? "Drop it here" : "Upload your image"}
             </h3>
             <p className="text-sm text-foreground-muted text-center max-w-sm px-4">
-              Drag and drop, or click to browse. PNG, JPEG, WEBP supported.
+              Drag and drop, or click to browse. PNG, JPEG, WEBP supported. Laser files (.lac, .svg, .dxf) open in the Studio.
             </p>
             <div className="mt-6 flex items-center gap-2 text-xs text-foreground-muted">
               <ImageIcon className="w-3.5 h-3.5" />
@@ -247,7 +260,7 @@ export default function Workspace() {
               type="file"
               className="hidden"
               ref={fileInputRef}
-              accept="image/png, image/jpeg, image/webp"
+              accept="image/png, image/jpeg, image/webp, .lac, .svg, .dxf"
               onChange={handleFileUpload}
             />
           </div>

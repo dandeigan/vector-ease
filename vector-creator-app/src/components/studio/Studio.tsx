@@ -9,6 +9,8 @@ import {
 import { StudioEngine, type EngineState, type ShapeKind } from "@/lib/studio/engine";
 import { importLac } from "@/lib/studio/import-lac";
 import { importSvg } from "@/lib/studio/import-svg";
+import { importDxf } from "@/lib/studio/import-dxf";
+import { takePendingStudioFiles } from "@/lib/studio/handoff";
 import { DEFAULT_FONT_ID, registerFontFaces } from "@/lib/studio/fonts";
 import type { StudioTextSettings } from "@/lib/studio/types";
 import SelectionPanel from "./SelectionPanel";
@@ -30,7 +32,7 @@ const DEFAULT_TEXT: StudioTextSettings = {
   letterSpacing: 0,
 };
 
-const OPEN_ACCEPT = ".lac,.svg,image/svg+xml";
+const OPEN_ACCEPT = ".lac,.svg,.dxf,image/svg+xml,image/vnd.dxf,application/dxf";
 
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "design";
@@ -61,7 +63,13 @@ export default function Studio() {
     if (!el || !box) return;
     const engine = new StudioEngine(el, setState);
     engineRef.current = engine;
-    engine.init({ width: box.clientWidth, height: box.clientHeight }).then(() => setState(engine.getState()));
+    engine.init({ width: box.clientWidth, height: box.clientHeight }).then(() => {
+      if (engineRef.current !== engine) return; // unmounted while loading
+      setState(engine.getState());
+      // Files picked on the Convert page and sent here.
+      const handed = takePendingStudioFiles();
+      if (handed.length) openFilesRef.current?.(handed);
+    });
 
     const ro = new ResizeObserver(() => engine.resize({ width: box.clientWidth, height: box.clientHeight }));
     ro.observe(box);
@@ -86,11 +94,12 @@ export default function Studio() {
         let design;
         if (ext === "lac") design = await importLac(file, name);
         else if (ext === "svg" || file.type === "image/svg+xml") design = await importSvg(file, name);
+        else if (ext === "dxf") design = await importDxf(file, name);
         else if (file.type.startsWith("image/")) {
           toast("warn", `To turn a photo into a vector, use Convert first. Opening photos straight in the Studio is coming in the next update.`);
           continue;
         } else {
-          toast("error", `"${name}" isn't a file type the Studio can open yet. Right now it opens Bambu .lac and .svg files.`);
+          toast("error", `"${name}" isn't a file type the Studio can open yet. Right now it opens Bambu .lac, .svg and .dxf files.`);
           continue;
         }
         await engine.addDesign(design);
@@ -104,6 +113,8 @@ export default function Studio() {
       }
     }
   }, [toast]);
+  const openFilesRef = useRef(openFiles);
+  useEffect(() => { openFilesRef.current = openFiles; }, [openFiles]);
 
   /* ── actions ── */
   const addText = async () => {
@@ -214,7 +225,7 @@ export default function Studio() {
           <button onClick={newProject} className="btn-ghost" title="New design">
             <FilePlus className="w-4 h-4" /> <span className="hidden md:inline">New</span>
           </button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac or .svg (⌘O)">
+          <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg or .dxf (⌘O)">
             <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
           </button>
           <button onClick={exportSvg} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg hover:scale-[1.02] transition-transform" title="Export SVG (⌘S)">
@@ -275,7 +286,7 @@ export default function Studio() {
                   <FolderOpen className="w-6 h-6" />
                 </div>
                 <h2 className="text-lg font-bold mb-1">Start a design</h2>
-                <p className="text-sm text-foreground-muted mb-5">Drop a Bambu <b>.lac</b> or an <b>.svg</b> file anywhere here, or start from scratch.</p>
+                <p className="text-sm text-foreground-muted mb-5">Drop a Bambu <b>.lac</b>, <b>.svg</b> or <b>.dxf</b> file anywhere here, or start from scratch.</p>
                 <div className="flex gap-2 justify-center">
                   <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12]">Open a file</button>
                   <button onClick={addText} className="px-4 py-2 rounded-lg text-sm font-medium border border-border hover:border-dd-gold-400/40">Add text</button>
