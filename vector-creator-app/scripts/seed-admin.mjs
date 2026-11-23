@@ -15,8 +15,14 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const EMAIL = "dandeigan@icloud.com";
-const PASSWORD = "VectorEase2026!";
+// Usage: ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... node scripts/seed-admin.mjs
+// Never write the password into this file: the repo is on GitHub.
+const EMAIL = process.env.ADMIN_EMAIL;
+const PASSWORD = process.env.ADMIN_PASSWORD;
+if (!EMAIL || !PASSWORD) {
+  console.error("Set ADMIN_EMAIL and ADMIN_PASSWORD in the environment first.");
+  process.exit(1);
+}
 
 try {
   // Sign in with existing account
@@ -37,7 +43,6 @@ try {
 
   console.log("✓ SuperAdmin record written to Firestore");
   console.log(`  Email:    ${EMAIL}`);
-  console.log(`  Password: ${PASSWORD}`);
   console.log(`  UID:      ${uid}`);
   console.log(`  Role:     superadmin`);
   process.exit(0);
