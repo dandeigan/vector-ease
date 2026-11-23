@@ -15,6 +15,7 @@ import { DEFAULT_FONT_ID, registerFontFaces } from "@/lib/studio/fonts";
 import type { StudioTextSettings } from "@/lib/studio/types";
 import SelectionPanel from "./SelectionPanel";
 import LayersPanel from "./LayersPanel";
+import ExportDoneDialog, { exportDialogSkipped, type ExportInfo } from "./ExportDoneDialog";
 import MmInput from "./MmInput";
 
 interface Toast {
@@ -49,6 +50,8 @@ export default function Studio() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [exported, setExported] = useState<ExportInfo | null>(null);
+  const lastExport = useRef<{ svg: string; file: string } | null>(null);
 
   const toast = useCallback((tone: Toast["tone"], text: string) => {
     const id = Date.now() + Math.random();
@@ -135,6 +138,18 @@ export default function Studio() {
       return;
     }
     const file = `${slugify(engine.projectName)}.svg`;
+    lastExport.current = { svg, file };
+    download(svg, file);
+    const layers = engine.getState().layers.filter((l) => l.visible && l.count > 0);
+    if (exportDialogSkipped()) {
+      toast("ok", `Saved ${file} to Downloads (${shapeCount} shapes, ${engine.board.w} × ${engine.board.h} mm).`);
+      if (hiddenLayerNames.length) toast("warn", `Hidden layers were left out: ${hiddenLayerNames.join(", ")}.`);
+      return;
+    }
+    setExported({ file, shapeCount, board: { ...engine.board }, layers, hiddenLayerNames });
+  };
+
+  const download = (svg: string, file: string) => {
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     const a = document.createElement("a");
     a.href = url;
@@ -143,8 +158,6 @@ export default function Studio() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("ok", `Saved ${file} (${shapeCount} shapes, ${engine.board.w} × ${engine.board.h} mm).`);
-    if (hiddenLayerNames.length) toast("warn", `Hidden layers were left out: ${hiddenLayerNames.join(", ")}.`);
   };
 
   const newProject = () => {
@@ -157,6 +170,7 @@ export default function Studio() {
     const onKey = (e: KeyboardEvent) => {
       const engine = eng();
       if (!engine) return;
+      if (document.querySelector('[aria-modal="true"]')) return; // a dialog is open
       const t = e.target as HTMLElement;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -349,6 +363,16 @@ export default function Studio() {
           )}
         </aside>
       </div>
+
+      {exported && (
+        <ExportDoneDialog
+          info={exported}
+          onClose={() => setExported(null)}
+          onDownloadAgain={() => lastExport.current && download(lastExport.current.svg, lastExport.current.file)}
+          onNewDesign={() => { setExported(null); eng()?.newProject(); }}
+          onConvertPhoto={() => { setExported(null); router.push("/dashboard"); }}
+        />
+      )}
 
       <style jsx global>{`
         .btn-ghost {
