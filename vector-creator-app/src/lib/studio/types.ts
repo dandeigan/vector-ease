@@ -19,6 +19,8 @@ export interface ImportedPath {
   layerId: string;
   name?: string;
   fillRule?: "nonzero" | "evenodd";
+  /** Original fill (or outline) colour as #RRGGBB, when the source file had one. */
+  sourceColor?: string;
 }
 
 /** One raster image coming out of an importer. `transform` maps 0..width × 0..height into mm. */

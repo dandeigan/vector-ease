@@ -1,7 +1,9 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame, Sparkles, AlertTriangle } from "lucide-react";
+import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame, Sparkles, AlertTriangle, Box, FileCode2, PenTool } from "lucide-react";
+import { importSvg } from "@/lib/studio/import-svg";
+import { buildLac, type LacShape } from "@/lib/studio/export-lac";
 import { useEffect, useMemo, useState } from "react";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 import { svgToLbrn2, defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
@@ -76,6 +78,13 @@ function colorName(hex: string): string {
   if (r > 80 && g > 80 && b > 80) return "Gray";
   return "Color";
 }
+
+const EXPORTS = [
+  { kind: "lbrn2", label: "Export for LightBurn (.lbrn2)", hint: "Layer names, modes, speed & power already set", icon: Flame },
+  { kind: "lac", label: "Export for Bambu Suite (.lac)", hint: "Opens as a Bambu project with Laser Line / Laser Fill set", icon: Box },
+  { kind: "svg", label: "Export Layered SVG", hint: "Works in xTool, Glowforge, Inkscape and most laser software", icon: PenTool },
+  { kind: "dxf", label: "Export DXF", hint: "For CAD software and older laser programs", icon: FileCode2 },
+] as const;
 
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
   const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, originalImage } = useEditorStore();
@@ -275,6 +284,38 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const saveBlob = (blob: Blob, file: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  /** Bambu Suite project. Layers in Line mode become Laser Line (score); Fill modes become Laser Fill (engrave). */
+  const handleDownloadLac = async () => {
+    const svg = getExportSvg();
+    if (!svg) return;
+    try {
+      const design = await importSvg(new Blob([svg], { type: "image/svg+xml" }), "vectorease-output.svg");
+      const shapes: LacShape[] = [];
+      for (const item of design.items) {
+        if (item.kind !== "path") continue;
+        const color = (item.sourceColor ?? "#000000").toUpperCase();
+        const mode = layerSettings[color]?.mode ?? "Line";
+        shapes.push({ d: item.d, operation: mode === "Line" ? "score" : "engrave", color, name: layerSettings[color]?.name ?? colorName(color) });
+      }
+      const result = await buildLac({ title: "VectorEase design", shapes });
+      if (result) saveBlob(result.blob, "vectorease-output.lac");
+    } catch (err) {
+      console.error("[handleDownloadLac]", err);
+      alert("Sorry, the .lac file couldn't be made. Try Export Layered SVG and import that into Bambu Suite.");
+    }
   };
 
   const handleDownloadDXF = () => {
@@ -567,34 +608,20 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
             </span>
           </div>
         )}
-        <button
-          disabled={!resultSvg || isDownloading}
-          onClick={() => gatedDownload(handleDownloadLbrn2)}
-          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg hover:shadow-xl disabled:opacity-30 disabled:shadow-none glow-gold-strong hover:scale-[1.01]"
-        >
-          <Flame className="w-4 h-4" />
-          Export for LightBurn (.lbrn2)
-        </button>
-        <p className="text-[10px] text-foreground-muted text-center -mt-1">
-          Opens in LightBurn with layer names, modes, speed &amp; power already set
-        </p>
-
-        <button
-          disabled={!resultSvg || isDownloading}
-          onClick={() => gatedDownload(handleDownloadSVG)}
-          className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all duration-200 disabled:opacity-30 mt-2"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Export Layered SVG
-        </button>
-        <button
-          disabled={!resultSvg || isDownloading}
-          onClick={() => gatedDownload(handleDownloadDXF)}
-          className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-gold-400/30 hover:text-dd-gold-400 transition-all duration-200 disabled:opacity-30"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Export DXF
-        </button>
+        {EXPORTS.map((x) => (
+          <button
+            key={x.label}
+            disabled={!resultSvg || isDownloading}
+            onClick={() => gatedDownload({ lbrn2: handleDownloadLbrn2, lac: handleDownloadLac, svg: handleDownloadSVG, dxf: handleDownloadDXF }[x.kind])}
+            className="w-full px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-left border border-dd-gold-400/30 bg-dd-gold-400/10 text-foreground hover:bg-dd-gold-400/20 hover:border-dd-gold-400/60 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <x.icon className="w-4 h-4 text-dd-gold-400 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">{x.label}</span>
+              <span className="block text-[10px] text-foreground-muted leading-snug">{x.hint}</span>
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* ── Paywall Modal (Founder's Lifetime Deal upsell) ── */}

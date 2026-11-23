@@ -3,7 +3,8 @@ import {
 } from "fabric";
 import { buildSvg } from "./export-svg";
 import { textToPath } from "./fonts";
-import { ellipsePath, heartPath, multiply, rectPath, starPath, translate } from "./geometry";
+import { bakeCommands, ellipsePath, heartPath, multiply, rectPath, starPath, translate } from "./geometry";
+import type { LacShape } from "./export-lac";
 import { DEFAULT_LAYERS, LAYER_PALETTE, newLayerId } from "./layers";
 import type { ImportedDesign, LayerOperation, Matrix, StudioLayer, StudioTextSettings } from "./types";
 
@@ -706,5 +707,25 @@ export class StudioEngine {
 
   exportSvg() {
     return buildSvg({ name: this.projectName, board: this.board, layers: this.layers, leaves: this.leaves() });
+  }
+
+  /** Visible vector shapes in board millimetres, for the Bambu .lac writer. Photos aren't included yet. */
+  lacShapes(): { shapes: LacShape[]; skippedImages: number; hiddenLayerNames: string[] } {
+    const shapes: LacShape[] = [];
+    let skippedImages = 0;
+    const leaves = this.leaves();
+    for (const leaf of leaves) {
+      const layer = this.layers.find((l) => l.id === leaf.layerId) ?? this.layers[0];
+      if (!layer.visible) continue;
+      if (!(leaf instanceof Path) || layer.operation === "image") {
+        skippedImages++;
+        continue;
+      }
+      const world = leaf.calcTransformMatrix() as Matrix;
+      const d = bakeCommands(leaf.path as unknown as (string | number)[][], multiply(world, translate(-leaf.pathOffset.x, -leaf.pathOffset.y)));
+      if (d) shapes.push({ d, operation: layer.operation, color: layer.color, name: (leaf.studioName as string | undefined) || undefined });
+    }
+    const hiddenLayerNames = this.layers.filter((l) => !l.visible && leaves.some((o) => o.layerId === l.id)).map((l) => l.name);
+    return { shapes, skippedImages, hiddenLayerNames };
   }
 }

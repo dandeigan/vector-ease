@@ -5,12 +5,36 @@ import { CheckCircle2, Download, FilePlus2, ImageIcon, X } from "lucide-react";
 import type { LayerWithCount } from "@/lib/studio/engine";
 
 export interface ExportInfo {
+  kind: "svg" | "lac" | "lbrn2" | "dxf";
   file: string;
   shapeCount: number;
   board: { w: number; h: number };
   layers: LayerWithCount[]; // layers that made it into the file
   hiddenLayerNames: string[];
 }
+
+const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
+  svg: [
+    "Open or drag the file into your laser software (LightBurn, xTool Creative Space, Glowforge, Bambu Suite…).",
+    "Each colour comes in as its own layer. Set its power and speed there.",
+    "Check the size and position on the bed, then run a test on scrap first.",
+  ],
+  lac: [
+    "Double-click the file to open it in Bambu Suite.",
+    "Cut, Score and Engrave are already set as Laser Cut, Laser Line and Laser Fill. Pick your material (it starts as 3mm Birch Plywood).",
+    "Click Prepare, check the preview, and test on scrap first.",
+  ],
+  lbrn2: [
+    "Double-click the file to open it in LightBurn.",
+    "Layer names, modes, speed and power are already set. Adjust them for your material.",
+    "Check the size and position on the bed, then run a test on scrap first.",
+  ],
+  dxf: [
+    "Import the file into your laser or CAD software.",
+    "DXF files don't carry laser settings. Choose cut or engrave for each layer there.",
+    "Check the size and position on the bed, then run a test on scrap first.",
+  ],
+};
 
 const SKIP_KEY = "vectorease-skip-export-dialog";
 
@@ -81,9 +105,7 @@ export default function ExportDoneDialog({
         <div className="mt-4">
           <div className="text-sm font-semibold mb-1.5">What&apos;s next</div>
           <ol className="list-decimal pl-5 space-y-1 text-sm text-foreground-muted marker:text-foreground-muted">
-            <li>Open or drag the file into your laser software (LightBurn, Bambu Suite, xTool Creative Space…).</li>
-            <li>Each colour comes in as its own layer. Set its power and speed there.</li>
-            <li>Check the size and position on the bed, then run a test on scrap first.</li>
+            {NEXT_STEPS[info.kind].map((step, i) => <li key={i}>{step}</li>)}
           </ol>
         </div>
 

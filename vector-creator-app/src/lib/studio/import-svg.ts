@@ -98,6 +98,11 @@ function layerFromAncestors(el: Element, root: Element): string | null {
   return null;
 }
 
+function toHex(c: string | null): string | undefined {
+  const rgb = c ? parseColor(c) : null;
+  return rgb ? "#" + rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("").toUpperCase() : undefined;
+}
+
 function toMatrix(m: DOMMatrix): Matrix {
   return [m.a, m.b, m.c, m.d, m.e, m.f];
 }
@@ -188,6 +193,7 @@ export async function importSvg(file: File | Blob, fileName = "SVG design"): Pro
           layerId,
           name: el.getAttribute("id") ?? undefined,
           fillRule: style.fillRule === "evenodd" ? "evenodd" : "nonzero",
+          sourceColor: toHex(fill ?? stroke),
         });
       } catch {
         // A malformed path shouldn't sink the whole file.

@@ -11,6 +11,7 @@ import { importLac } from "@/lib/studio/import-lac";
 import { importSvg } from "@/lib/studio/import-svg";
 import { importDxf } from "@/lib/studio/import-dxf";
 import { takePendingStudioFiles } from "@/lib/studio/handoff";
+import { buildLac } from "@/lib/studio/export-lac";
 import { DEFAULT_FONT_ID, registerFontFaces } from "@/lib/studio/fonts";
 import type { StudioTextSettings } from "@/lib/studio/types";
 import SelectionPanel from "./SelectionPanel";
@@ -51,7 +52,7 @@ export default function Studio() {
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [exported, setExported] = useState<ExportInfo | null>(null);
-  const lastExport = useRef<{ svg: string; file: string } | null>(null);
+  const lastExport = useRef<{ blob: Blob; file: string } | null>(null);
 
   const toast = useCallback((tone: Toast["tone"], text: string) => {
     const id = Date.now() + Math.random();
@@ -129,6 +130,21 @@ export default function Studio() {
   };
   const addShape = (k: ShapeKind) => eng()?.addShape(k);
 
+  /** Download a finished file and show the export-complete box (or a toast if the user turned it off). */
+  const finishExport = (kind: ExportInfo["kind"], file: string, blob: Blob, shapeCount: number, hiddenLayerNames: string[]) => {
+    const engine = eng();
+    if (!engine) return;
+    lastExport.current = { blob, file };
+    download(blob, file);
+    const layers = engine.getState().layers.filter((l) => l.visible && l.count > 0 && (kind === "svg" || l.operation !== "image"));
+    if (exportDialogSkipped()) {
+      toast("ok", `Saved ${file} to Downloads (${shapeCount} shapes, ${engine.board.w} × ${engine.board.h} mm).`);
+      if (hiddenLayerNames.length) toast("warn", `Hidden layers were left out: ${hiddenLayerNames.join(", ")}.`);
+      return;
+    }
+    setExported({ kind, file, shapeCount, board: { ...engine.board }, layers, hiddenLayerNames });
+  };
+
   const exportSvg = () => {
     const engine = eng();
     if (!engine) return;
@@ -137,20 +153,26 @@ export default function Studio() {
       toast("warn", "There's nothing to export yet. Open a file or add some text first.");
       return;
     }
-    const file = `${slugify(engine.projectName)}.svg`;
-    lastExport.current = { svg, file };
-    download(svg, file);
-    const layers = engine.getState().layers.filter((l) => l.visible && l.count > 0);
-    if (exportDialogSkipped()) {
-      toast("ok", `Saved ${file} to Downloads (${shapeCount} shapes, ${engine.board.w} × ${engine.board.h} mm).`);
-      if (hiddenLayerNames.length) toast("warn", `Hidden layers were left out: ${hiddenLayerNames.join(", ")}.`);
-      return;
-    }
-    setExported({ file, shapeCount, board: { ...engine.board }, layers, hiddenLayerNames });
+    finishExport("svg", `${slugify(engine.projectName)}.svg`, new Blob([svg], { type: "image/svg+xml" }), shapeCount, hiddenLayerNames);
   };
 
-  const download = (svg: string, file: string) => {
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const exportLac = async () => {
+    const engine = eng();
+    if (!engine) return;
+    const { shapes, skippedImages, hiddenLayerNames } = engine.lacShapes();
+    const result = shapes.length ? await buildLac({ title: engine.projectName, shapes }) : null;
+    if (!result) {
+      toast("warn", skippedImages
+        ? "Photos can't go into a Bambu .lac file yet. Export SVG instead, or add some shapes or text."
+        : "There's nothing to export yet. Open a file or add some text first.");
+      return;
+    }
+    if (skippedImages) toast("warn", `${skippedImages} photo${skippedImages > 1 ? "s were" : " was"} left out: .lac export doesn't include photos yet. Export SVG keeps them.`);
+    finishExport("lac", `${slugify(engine.projectName)}.lac`, result.blob, shapes.length, hiddenLayerNames);
+  };
+
+  const download = (blob: Blob, file: string) => {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = file;
@@ -242,8 +264,11 @@ export default function Studio() {
           <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg or .dxf (⌘O)">
             <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
           </button>
-          <button onClick={exportSvg} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg hover:scale-[1.02] transition-transform" title="Export SVG (⌘S)">
+          <button onClick={exportSvg} className="btn-export" title="Export SVG for LightBurn, xTool, Glowforge… (⌘S)">
             <Download className="w-4 h-4" /> Export SVG
+          </button>
+          <button onClick={exportLac} className="btn-export" title="Export a Bambu Suite project (.lac)">
+            <Download className="w-4 h-4" /> Export .lac
           </button>
         </div>
         <input
@@ -368,7 +393,7 @@ export default function Studio() {
         <ExportDoneDialog
           info={exported}
           onClose={() => setExported(null)}
-          onDownloadAgain={() => lastExport.current && download(lastExport.current.svg, lastExport.current.file)}
+          onDownloadAgain={() => lastExport.current && download(lastExport.current.blob, lastExport.current.file)}
           onNewDesign={() => { setExported(null); eng()?.newProject(); }}
           onConvertPhoto={() => { setExported(null); router.push("/dashboard"); }}
         />
@@ -380,6 +405,13 @@ export default function Studio() {
           padding: 0.45rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 500;
           color: var(--foreground-muted); border: 1px solid var(--border); transition: all 150ms;
         }
+        .btn-export {
+          display: inline-flex; align-items: center; gap: 0.5rem;
+          padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600;
+          color: #080B12; background: linear-gradient(to right, var(--dd-gold-500), var(--dd-gold-400));
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); transition: transform 150ms;
+        }
+        .btn-export:hover { transform: scale(1.02); }
         .btn-ghost:hover { color: var(--dd-gold-400); border-color: rgba(245,166,35,0.4); }
         .panel-title {
           font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
