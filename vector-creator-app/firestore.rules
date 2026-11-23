@@ -2,37 +2,67 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if the user is logged in
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    // Helper function to check if the user is accessing their own data
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
-    // Helper function to check if the user is a superadmin
+
     function isSuperAdmin() {
-      return isSignedIn() && 
+      return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
     }
 
-    // Rules for the 'users' collection
-    match /users/{userId} {
-      // Users can read and write their own profile
-      // Superadmins can read and write all profiles
-      allow read, write: if isOwner(userId) || isSuperAdmin();
+    // A brand-new user may only create their own doc with trial defaults.
+    // (Mirrors syncUserToFirestore in src/lib/firebase/users.ts.)
+    function isValidNewUser() {
+      let d = request.resource.data;
+      return d.role == 'user'
+        && d.subscriptionStatus == 'trial'
+        && d.totalVectorizations == 0
+        && d.vectorizationsRemaining == 5
+        && d.downloadedImageFingerprints.size() == 0
+        && d.trialExpiresAt <= request.time + duration.value(16, 'd');
     }
-    
-    // Rules for the 'vectorizations' collection
+
+    // An owner may only touch these fields, and only in these ways:
+    // - displayName / lastLoginAt: freely
+    // - totalVectorizations: +1 at a time
+    // - vectorizationsRemaining: -1 at a time, never below 0
+    // - downloadedImageFingerprints: append exactly one
+    // role, subscriptionStatus, trialExpiresAt and all Stripe fields are
+    // server-only (Stripe webhook) or superadmin-only.
+    function isValidOwnerUpdate() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+      return changed.hasOnly([
+          'displayName', 'lastLoginAt', 'totalVectorizations',
+          'vectorizationsRemaining', 'downloadedImageFingerprints'
+        ])
+        && (!changed.hasAny(['totalVectorizations'])
+            || after.totalVectorizations == before.get('totalVectorizations', 0) + 1)
+        && (!changed.hasAny(['vectorizationsRemaining'])
+            || (after.vectorizationsRemaining == before.get('vectorizationsRemaining', 5) - 1
+                && after.vectorizationsRemaining >= 0))
+        && (!changed.hasAny(['downloadedImageFingerprints'])
+            || after.downloadedImageFingerprints.size()
+               == before.get('downloadedImageFingerprints', []).size() + 1);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin();
+      allow create: if (isOwner(userId) && isValidNewUser()) || isSuperAdmin();
+      allow update: if (isOwner(userId) && isValidOwnerUpdate()) || isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
     match /vectorizations/{vectorizationId} {
-      // Users can log vectorization events under their own ID
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      
-      // Superadmins can read/list vectorization statistics
       allow read, list: if isSuperAdmin();
     }
   }

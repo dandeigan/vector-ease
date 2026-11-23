@@ -48,6 +48,15 @@ export default function DashboardPage() {
             <h1 className="text-base font-bold tracking-tight">
               Vector<span className="text-dd-gold-400">Ease</span>
             </h1>
+            <nav className="flex items-center rounded-lg border border-border p-0.5 ml-3">
+              <span className="px-3 py-1 text-xs font-semibold rounded-md bg-dd-gold-400/15 text-dd-gold-400">Convert</span>
+              <button
+                onClick={() => router.push("/studio")}
+                className="px-3 py-1 text-xs font-medium rounded-md text-foreground-muted hover:text-foreground"
+              >
+                Studio
+              </button>
+            </nav>
           </div>
 
           <div className="flex items-center gap-3">

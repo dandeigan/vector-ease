@@ -1,4 +1,5 @@
 import { TracingOptions } from "@/store/useEditorStore";
+import { auth } from "@/lib/firebase/config";
 
 /**
  * Traces an image by sending it to the server-side VTracer engine.
@@ -6,9 +7,13 @@ import { TracingOptions } from "@/store/useEditorStore";
  * then merges colors to the detected palette for accurate layer mapping.
  */
 export async function traceImageToSVG(imageUrl: string, options: TracingOptions): Promise<string> {
+  const token = await auth.currentUser?.getIdToken();
   const res = await fetch("/api/vectorize", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({
       imageBase64: imageUrl,
       numberOfColors: options.numberOfColors,

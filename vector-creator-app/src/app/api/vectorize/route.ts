@@ -6,6 +6,7 @@ const Hierarchical_Stacked = 0;
 const PathSimplifyMode_Polygon = 1;
 const PathSimplifyMode_Spline = 2;
 import sharp from "sharp";
+import { getVerifiedUid } from "@/lib/firebase/verify-token";
 
 function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -73,6 +74,12 @@ async function quantizeImageToPalette(
 }
 
 export async function POST(req: NextRequest) {
+  // Only signed-in users may use the vectorizer (it costs server CPU).
+  const uid = await getVerifiedUid(req);
+  if (!uid) {
+    return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  }
+
   try {
     const { imageBase64, numberOfColors, smoothness, detectedPalette } = await req.json();
 
