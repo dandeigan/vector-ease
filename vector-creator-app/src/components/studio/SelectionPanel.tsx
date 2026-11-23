@@ -5,6 +5,7 @@ import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import type { EngineState, StudioEngine } from "@/lib/studio/engine";
 import { FONTS } from "@/lib/studio/fonts";
 import type { StudioTextSettings } from "@/lib/studio/types";
+import HelpTip, { Steps } from "./HelpTip";
 import MmInput from "./MmInput";
 
 const KIND_LABEL: Record<string, string> = {
@@ -58,7 +59,17 @@ export default function SelectionPanel({
 
       {sel.kind !== "image" && (
         <div>
-          <Label>Layer</Label>
+          <div className="flex items-center justify-between">
+            <Label>Layer</Label>
+            <HelpTip title="Changing what the laser does">
+              <p className="mb-2">The layer decides the job: <b className="text-red-400">Cut</b> through, <b className="text-blue-400">Score</b> a line, or <b>Engrave</b> (fill).</p>
+              <Steps items={[
+                <>If only part of a design should change, click <b>Ungroup</b> on the left first.</>,
+                <>Click the part you want (hold <b>Shift</b> for more than one).</>,
+                <>Pick the new layer here. Its colour changes on the board.</>,
+              ]} />
+            </HelpTip>
+          </div>
           <select
             value={sel.layerId ?? ""}
             onChange={(e) => engine.assignSelectionToLayer(e.target.value)}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import type { EngineState, LayerWithCount, StudioEngine } from "@/lib/studio/engine";
 import { OPERATION_LABELS } from "@/lib/studio/layers";
+import HelpTip, { Steps } from "./HelpTip";
 import type { LayerOperation } from "@/lib/studio/types";
 
 const OP_HINT: Record<LayerOperation, string> = {
@@ -17,7 +18,25 @@ export default function LayersPanel({ state, engine }: { state: EngineState; eng
   return (
     <section className="p-4 border-t border-border">
       <div className="flex items-center justify-between">
-        <h3 className="panel-title">Layers</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="panel-title">Layers</h3>
+          <HelpTip title="How layers work">
+            <p className="mb-2">Each layer is one laser job. <b className="text-red-400">Cut</b> goes all the way through, <b className="text-blue-400">Score</b> draws a light line, <b>Engrave</b> fills shapes in. The number on each layer is how many shapes it holds. 0 means that job does nothing.</p>
+            <p className="font-semibold mb-1">Move part of a design to another layer</p>
+            <Steps items={[
+              <>Click the design. If it moves as one piece, click <b>Ungroup</b> on the left.</>,
+              <>Click an empty spot on the board, then click the part you want. Hold <b>Shift</b> to pick more than one.</>,
+              <>Under <b>Selection</b>, change <b>Layer</b> (for example Score → Cut).</>,
+            ]} />
+            <p className="font-semibold mt-2 mb-1">Add a cut-out border</p>
+            <Steps items={[
+              <>Click <b>Circle</b> or <b>Box</b> on the left.</>,
+              <>Drag its corners (or type the size) so it sits around your design.</>,
+              <>Set its <b>Layer</b> to <b>Cut</b>.</>,
+            ]} />
+            <p className="mt-2 text-foreground-muted">The eye icon hides a layer. Hidden layers are left out of the export.</p>
+          </HelpTip>
+        </div>
         <button
           onClick={() => engine.addLayer("engrave")}
           className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground-muted hover:text-dd-gold-400"
