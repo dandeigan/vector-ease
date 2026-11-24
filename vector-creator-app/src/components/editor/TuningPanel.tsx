@@ -1,19 +1,10 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Download, Play, Wand2, Layers, Spline, Eye, EyeOff, Flame, Sparkles, AlertTriangle, Box, FileCode2, PenTool } from "lucide-react";
-import { importSvg } from "@/lib/studio/import-svg";
-import { buildLac, type LacShape } from "@/lib/studio/export-lac";
-import { useEffect, useMemo, useState } from "react";
-import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
-import { svgToLbrn2, defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
-import { useAuth } from "@/components/auth/AuthContext";
-import {
-  computeImageFingerprint,
-  evaluateDownload,
-  markImageDownloaded,
-  getVectorizationsRemaining,
-} from "@/lib/firebase/users";
+import { Play, Wand2, Layers, Spline, Eye, EyeOff, Sparkles, AlertTriangle, PenTool } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
+import { colorName, filterSvg, parseLayers } from "@/lib/vectorizer/svg-layers";
 
 interface TuningPanelProps {
   onTraceTrigger: () => void;
@@ -23,80 +14,8 @@ interface TuningPanelProps {
   onFilteredSvgChange?: (svg: string) => void;
 }
 
-/* ── Layer parsing helpers ── */
-interface LayerInfo {
-  color: string;
-  pathCount: number;
-}
-
-/** Convert rgb(r,g,b) string to #RRGGBB */
-function rgbToHex(rgb: string): string {
-  const m = rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
-  if (!m) return rgb;
-  const [, r, g, b] = m;
-  return "#" + [r, g, b].map((v) => parseInt(v).toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
-function parseLayers(svg: string): LayerInfo[] {
-  // Match both rgb() and hex fill formats
-  const fillRegex = /fill="(rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|#[0-9a-fA-F]{6})"/g;
-  const counts = new Map<string, number>();
-  let m;
-  while ((m = fillRegex.exec(svg)) !== null) {
-    const c = rgbToHex(m[1]).toUpperCase();
-    counts.set(c, (counts.get(c) || 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([color, pathCount]) => ({ color, pathCount }))
-    .sort((a, b) => b.pathCount - a.pathCount);
-}
-
-function filterSvg(svg: string, hidden: Set<string>): string {
-  if (hidden.size === 0) return svg;
-  return svg.replace(
-    /(<path[^>]*fill=")(rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|#[0-9a-fA-F]{6})("[^>]*)(\/?>)/gi,
-    (full, pre, color, mid, close) =>
-      hidden.has(rgbToHex(color).toUpperCase())
-        ? `${pre}${color}"${mid} style="opacity:0.06"${close}`
-        : full
-  );
-}
-
-function colorName(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  if (brightness > 240) return "White";
-  if (brightness < 30) return "Black";
-  if (r > 180 && g < 80 && b < 80) return "Red";
-  if (r < 80 && g > 150 && b < 80) return "Green";
-  if (r < 80 && g < 80 && b > 180) return "Blue";
-  if (r > 180 && g > 150 && b < 80) return "Yellow";
-  if (r > 180 && g > 100 && b < 80) return "Orange";
-  if (r > 150 && g > 150 && b > 150) return "Light Gray";
-  if (r > 80 && g > 80 && b > 80) return "Gray";
-  return "Color";
-}
-
-const EXPORTS = [
-  { kind: "lbrn2", label: "Export for LightBurn (.lbrn2)", hint: "Layer names, modes, speed & power already set", icon: Flame },
-  { kind: "lac", label: "Export for Bambu Suite (.lac)", hint: "Opens as a Bambu project with Laser Line / Laser Fill set", icon: Box },
-  { kind: "svg", label: "Export Layered SVG", hint: "Works in xTool, Glowforge, Inkscape and most laser software", icon: PenTool },
-  { kind: "dxf", label: "Export DXF", hint: "For CAD software and older laser programs", icon: FileCode2 },
-] as const;
-
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
-  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, originalImage } = useEditorStore();
-  const { user, userRecord } = useAuth();
-  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const remaining = userRecord ? getVectorizationsRemaining(userRecord) : 0;
-  const isPaidOrAdmin =
-    userRecord?.role === "superadmin" || userRecord?.subscriptionStatus === "active";
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, hiddenLayers, setHiddenLayers } = useEditorStore();
 
   /**
    * One-click presets for common input types.
@@ -121,38 +40,6 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
         // Drawings, engravings, sketches: ink on paper. Keeps fine lines, drops the paper.
         setOptions({ lineArt: true, inkTones: 1, inkSensitivity: 50, smoothness: 1 });
         break;
-    }
-  };
-
-  /**
-   * Trigger Stripe Checkout for the Founder's Lifetime Deal.
-   * Uses Stripe's session.url redirect pattern (post-2025-09-30 — replaced
-   * the deprecated stripe.redirectToCheckout()). Mirrors UpgradeButton.tsx.
-   */
-  const handleCheckout = async () => {
-    if (!user) return;
-    setCheckoutLoading(true);
-    try {
-      const res = await fetch("/api/checkout_sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.uid }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        console.error("[paywall checkout] API error:", data.error);
-        setCheckoutLoading(false);
-        return;
-      }
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        console.error("[paywall checkout] No checkout URL returned from API");
-        setCheckoutLoading(false);
-      }
-    } catch (err) {
-      console.error("[paywall checkout] Failed:", err);
-      setCheckoutLoading(false);
     }
   };
 
@@ -183,11 +70,10 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
   }, [resultSvg]);
 
   const toggleLayer = (color: string) => {
-    setHiddenLayers((prev) => {
-      const next = new Set(prev);
-      next.has(color) ? next.delete(color) : next.add(color);
-      return next;
-    });
+    const next = new Set(hiddenLayers);
+    if (next.has(color)) next.delete(color);
+    else next.add(color);
+    setHiddenLayers(next);
   };
 
   const isolateLayer = (color: string) => {
@@ -196,145 +82,6 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
 
   const showAll = () => {
     setHiddenLayers(new Set());
-  };
-
-  /** Remove hidden layers from SVG before export */
-  const getExportSvg = (): string => {
-    if (!resultSvg) return "";
-    if (hiddenLayers.size === 0) return resultSvg;
-    // Remove paths whose fill color is hidden (not just opacity — fully remove)
-    return resultSvg.replace(
-      /<path[^>]*fill="(rgb\([^)]+\)|#[0-9a-fA-F]{6})"[^>]*\/?>(\s*<\/path>)?/gi,
-      (full, color) => {
-        const hex = color.startsWith("rgb") ? rgbToHex(color).toUpperCase() : color.toUpperCase();
-        return hiddenLayers.has(hex) ? "" : full;
-      }
-    );
-  };
-
-  /**
-   * Gate every download through the quota check.
-   * - Multi-format downloads of the same source image count as 1 (deduped by SHA-256 fingerprint).
-   * - When the quota is exhausted, opens the paywall modal and aborts the download.
-   * - Superadmins and paid users bypass all gating.
-   * - Brevo VECTORIZATIONS_USED attribute is updated in the background after a decrement.
-   */
-  const gatedDownload = async (downloadFn: () => void) => {
-    if (isDownloading) return;
-    if (!user || !user.email || !userRecord || !originalImage) {
-      // Safety: if context is missing, fall back to the raw download (don't block user).
-      downloadFn();
-      return;
-    }
-    setIsDownloading(true);
-    try {
-      const fingerprint = await computeImageFingerprint(originalImage);
-      const decision = evaluateDownload(userRecord, fingerprint);
-
-      if (!decision.allow) {
-        setShowPaywall(true);
-        return;
-      }
-
-      downloadFn();
-
-      if (!decision.alreadyDownloaded) {
-        // Persist decrement + push updated count to Brevo. Fire-and-forget — the download already happened.
-        markImageDownloaded(user.uid, user.email, fingerprint).catch((err) =>
-          console.error("[gatedDownload] markImageDownloaded failed", err)
-        );
-      }
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  const handleDownloadSVG = () => {
-    const svg = getExportSvg();
-    if (!svg) return;
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "vectorease-output.svg";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadLbrn2 = () => {
-    const svg = getExportSvg();
-    if (!svg) return;
-    const visibleLayers = layers.filter((l) => !hiddenLayers.has(l.color));
-    const layerConfigs = visibleLayers.map((l) => {
-      const s = layerSettings[l.color.toUpperCase()];
-      const preset = defaultPresetForMode("Line");
-      return {
-        color: l.color,
-        name: s?.name ?? colorName(l.color),
-        mode: s?.mode ?? "Line",
-        speedMmMin: s?.speedMmMin ?? preset.speedMmMin,
-        powerPct: s?.powerPct ?? preset.powerPct,
-      };
-    });
-    const lbrn = svgToLbrn2(svg, { layers: layerConfigs });
-    const blob = new Blob([lbrn], { type: "application/xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "vectorease-output.lbrn2";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const saveBlob = (blob: Blob, file: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  /** Bambu Suite project. Layers in Line mode become Laser Line (score); Fill modes become Laser Fill (engrave). */
-  const handleDownloadLac = async () => {
-    const svg = getExportSvg();
-    if (!svg) return;
-    try {
-      const design = await importSvg(new Blob([svg], { type: "image/svg+xml" }), "vectorease-output.svg");
-      const shapes: LacShape[] = [];
-      for (const item of design.items) {
-        if (item.kind !== "path") continue;
-        const color = (item.sourceColor ?? "#000000").toUpperCase();
-        const mode = layerSettings[color]?.mode ?? "Line";
-        shapes.push({ d: item.d, operation: mode === "Line" ? "score" : "engrave", color, name: layerSettings[color]?.name ?? colorName(color) });
-      }
-      const result = await buildLac({ title: "VectorEase design", shapes });
-      if (result) saveBlob(result.blob, "vectorease-output.lac");
-    } catch (err) {
-      console.error("[handleDownloadLac]", err);
-      alert("Sorry, the .lac file couldn't be made. Try Export Layered SVG and import that into Bambu Suite.");
-    }
-  };
-
-  const handleDownloadDXF = () => {
-    const svg = getExportSvg();
-    if (!svg) return;
-    const dxfString = svgToDxf(svg);
-    const blob = new Blob([dxfString], { type: "application/dxf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "vectorease-output.dxf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -684,70 +431,6 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
         </div>
       )}
 
-      {/* ── Export ── */}
-      <div className="px-5 py-4 border-t border-border space-y-2">
-        {/* Quota counter — only shown for trial users */}
-        {!isPaidOrAdmin && userRecord && (
-          <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-[10px] uppercase tracking-wider text-foreground-muted font-medium">
-              Free Trial
-            </span>
-            <span className={`text-[11px] font-bold ${remaining <= 1 ? "text-dd-gold-400" : "text-foreground-muted"}`}>
-              {remaining} of 5 left
-            </span>
-          </div>
-        )}
-        {EXPORTS.map((x) => (
-          <button
-            key={x.label}
-            disabled={!resultSvg || isDownloading}
-            onClick={() => gatedDownload({ lbrn2: handleDownloadLbrn2, lac: handleDownloadLac, svg: handleDownloadSVG, dxf: handleDownloadDXF }[x.kind])}
-            className="w-full px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-left border border-dd-gold-400/30 bg-dd-gold-400/10 text-foreground hover:bg-dd-gold-400/20 hover:border-dd-gold-400/60 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <x.icon className="w-4 h-4 text-dd-gold-400 shrink-0" />
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold">{x.label}</span>
-              <span className="block text-[10px] text-foreground-muted leading-snug">{x.hint}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* ── Paywall Modal (Founder's Lifetime Deal upsell) ── */}
-      {showPaywall && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
-          <div className="max-w-md w-full rounded-2xl border border-dd-gold-400/30 bg-card p-8 glow-gold-strong">
-            <div className="w-14 h-14 rounded-2xl bg-dd-gold-400/10 text-dd-gold-400 flex items-center justify-center mb-5 mx-auto">
-              <Flame className="w-7 h-7" />
-            </div>
-            <h3 className="text-2xl font-bold text-center mb-2">You've used your 5 free vectorizations</h3>
-            <p className="text-sm text-foreground-muted text-center mb-6 leading-relaxed">
-              If VectorEase saved you time, the Founder's Lifetime Deal locks in $39 USD forever.
-              No subscription. Capped at 100 customers, then $79.
-            </p>
-            <button
-              onClick={handleCheckout}
-              disabled={checkoutLoading}
-              className="block w-full py-3 rounded-xl text-sm font-semibold text-center bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
-            >
-              {checkoutLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-[#080B12]/30 border-t-[#080B12] rounded-full animate-smooth-spin" />
-                  Opening checkout...
-                </>
-              ) : (
-                "Claim Founder Seat — $39"
-              )}
-            </button>
-            <button
-              onClick={() => setShowPaywall(false)}
-              className="block w-full mt-3 py-2 text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors"
-            >
-              Not now
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -287,3 +287,21 @@ input[type="range"]::-moz-range-thumb {
 .animate-smooth-spin {
   animation: smoothSpin 1s linear infinite;
 }
+
+/* ── Shared app buttons (Convert + Studio headers) ── */
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 500;
+  color: var(--foreground-muted); border: 1px solid var(--border); transition: all 150ms;
+  white-space: nowrap;
+}
+.btn-ghost:hover:not(:disabled) { color: var(--dd-gold-400); border-color: rgba(245,166,35,0.4); }
+.btn-export {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600;
+  color: #080B12; background: linear-gradient(to right, var(--dd-gold-500), var(--dd-gold-400));
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); transition: transform 150ms, opacity 150ms;
+  white-space: nowrap;
+}
+.btn-export:hover:not(:disabled) { transform: scale(1.02); }
+.btn-ghost:disabled, .btn-export:disabled { opacity: 0.35; cursor: not-allowed; }

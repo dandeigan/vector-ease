@@ -69,6 +69,17 @@ interface EditorState {
   updateLayerSettings: (color: string, patch: Partial<LayerSettings>) => void;
   ensureLayerSettings: (color: string, defaults: LayerSettings) => void;
 
+  // Layers hidden on the Convert preview (left out of every export), keyed by uppercase hex.
+  hiddenLayers: Set<string>;
+  setHiddenLayers: (next: Set<string>) => void;
+
+  // Header buttons on Convert ask the workspace to do things it owns.
+  // Each is a counter: a new value means "do it now".
+  openRequest: number;
+  requestOpen: () => void;
+  clearRequest: number;
+  requestClear: () => void;
+
   // Global actions
   resetWorkspace: () => void;
 }
@@ -108,11 +119,20 @@ export const useEditorStore = create<EditorState>((set) => ({
       return { layerSettings: { ...state.layerSettings, [key]: defaults } };
     }),
 
+  hiddenLayers: new Set(),
+  setHiddenLayers: (next) => set({ hiddenLayers: next }),
+
+  openRequest: 0,
+  requestOpen: () => set((st) => ({ openRequest: st.openRequest + 1 })),
+  clearRequest: 0,
+  requestClear: () => set((st) => ({ clearRequest: st.clearRequest + 1 })),
+
   resetWorkspace: () => set({
     originalImage: null,
     resultSvg: null,
     isProcessing: false,
     options: defaultOptions,
     layerSettings: {},
+    hiddenLayers: new Set(),
   }),
 }));

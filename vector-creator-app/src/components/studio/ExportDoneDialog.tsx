@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Download, FilePlus2, ImageIcon, X } from "lucide-react";
+import { CheckCircle2, Download, FilePlus2, ImageIcon, X, type LucideIcon } from "lucide-react";
 import type { LayerWithCount } from "@/lib/studio/engine";
 
 export interface ExportInfo {
   kind: "svg" | "lac" | "lbrn2" | "dxf";
   file: string;
   shapeCount: number;
-  board: { w: number; h: number };
+  /** Design size in mm, when known. */
+  board?: { w: number; h: number };
   layers: LayerWithCount[]; // layers that made it into the file
   hiddenLayerNames: string[];
 }
@@ -55,15 +56,28 @@ function setSkipped(skip: boolean) {
   }
 }
 
+export interface ExportDoneAction {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+}
+
 export default function ExportDoneDialog({
-  info, onClose, onDownloadAgain, onNewDesign, onConvertPhoto,
+  info, onClose, onDownloadAgain, onNewDesign, onConvertPhoto, primaryLabel = "Keep editing", actions,
 }: {
   info: ExportInfo;
   onClose: () => void;
   onDownloadAgain: () => void;
-  onNewDesign: () => void;
-  onConvertPhoto: () => void;
+  onNewDesign?: () => void;
+  onConvertPhoto?: () => void;
+  primaryLabel?: string;
+  /** The two smaller buttons under the main one. Defaults to Start a new design / Convert a photo. */
+  actions?: ExportDoneAction[];
 }) {
+  const buttons: ExportDoneAction[] = actions ?? [
+    ...(onNewDesign ? [{ label: "Start a new design", icon: FilePlus2, onClick: onNewDesign }] : []),
+    ...(onConvertPhoto ? [{ label: "Convert a photo", icon: ImageIcon, onClick: onConvertPhoto }] : []),
+  ];
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -83,7 +97,7 @@ export default function ExportDoneDialog({
         </div>
         <p className="text-sm text-foreground-muted mt-2 leading-relaxed">
           <b className="text-foreground break-all">{info.file}</b> is in your <b className="text-foreground">Downloads</b> folder.
-          {" "}{info.shapeCount} shape{info.shapeCount === 1 ? "" : "s"}, {info.board.w} × {info.board.h} mm.
+          {" "}{info.shapeCount} shape{info.shapeCount === 1 ? "" : "s"}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
         </p>
 
         <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
@@ -111,14 +125,13 @@ export default function ExportDoneDialog({
 
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button onClick={onClose} className="sm:col-span-2 py-2.5 rounded-lg bg-dd-gold-400 text-black text-sm font-semibold hover:bg-dd-gold-300">
-            Keep editing
+            {primaryLabel}
           </button>
-          <button onClick={onNewDesign} className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-sm text-foreground-muted hover:text-dd-gold-400 hover:border-dd-gold-400/40">
-            <FilePlus2 className="w-4 h-4" /> Start a new design
-          </button>
-          <button onClick={onConvertPhoto} className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-sm text-foreground-muted hover:text-dd-gold-400 hover:border-dd-gold-400/40">
-            <ImageIcon className="w-4 h-4" /> Convert a photo
-          </button>
+          {buttons.map((b) => (
+            <button key={b.label} onClick={b.onClick} className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-sm text-foreground-muted hover:text-dd-gold-400 hover:border-dd-gold-400/40">
+              <b.icon className="w-4 h-4" /> {b.label}
+            </button>
+          ))}
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-foreground-muted">

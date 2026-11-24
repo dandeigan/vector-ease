@@ -4,20 +4,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Type, Square, Circle, Heart, Star, Undo2, Redo2, Copy, Trash2, Group as GroupIcon, Ungroup,
-  ZoomIn, ZoomOut, Maximize, FolderOpen, Download, FilePlus, ArrowLeft, Crosshair,
+  ZoomIn, ZoomOut, Maximize, FolderOpen, Download, FilePlus, Crosshair,
 } from "lucide-react";
 import { StudioEngine, type EngineState, type ShapeKind } from "@/lib/studio/engine";
 import { importLac } from "@/lib/studio/import-lac";
 import { importSvg } from "@/lib/studio/import-svg";
 import { importDxf } from "@/lib/studio/import-dxf";
-import { takePendingStudioFiles } from "@/lib/studio/handoff";
+import { takePendingStudioFiles, type StudioHandoffMeta } from "@/lib/studio/handoff";
+import { newLayerId } from "@/lib/studio/layers";
 import { buildLac } from "@/lib/studio/export-lac";
 import { DEFAULT_FONT_ID, registerFontFaces } from "@/lib/studio/fonts";
-import type { StudioTextSettings } from "@/lib/studio/types";
+import type { ImportedDesign, StudioTextSettings } from "@/lib/studio/types";
 import SelectionPanel from "./SelectionPanel";
 import LayersPanel from "./LayersPanel";
 import ExportDoneDialog, { exportDialogSkipped, type ExportInfo } from "./ExportDoneDialog";
 import MmInput from "./MmInput";
+import AppHeader from "@/components/AppHeader";
 
 interface Toast {
   id: number;
@@ -38,6 +40,24 @@ const OPEN_ACCEPT = ".lac,.svg,.dxf,image/svg+xml,image/vnd.dxf,application/dxf"
 
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "design";
+}
+
+/** A Convert result: give every colour its own Studio layer (named as on Convert) instead of lumping them into Engrave. */
+function applyLayerColors(design: ImportedDesign, layerColors: NonNullable<StudioHandoffMeta["layerColors"]>) {
+  const ids = new Map<string, string>();
+  for (const item of design.items) {
+    if (item.kind !== "path" || !item.sourceColor) continue;
+    const hex = item.sourceColor.toUpperCase();
+    const info = layerColors[hex];
+    if (!info) continue;
+    let id = ids.get(hex);
+    if (!id) {
+      id = newLayerId();
+      ids.set(hex, id);
+      design.layers.push({ id, name: info.name, color: hex, operation: info.operation, visible: true });
+    }
+    item.layerId = id;
+  }
 }
 
 export default function Studio() {
@@ -72,7 +92,7 @@ export default function Studio() {
       setState(engine.getState());
       // Files picked on the Convert page and sent here.
       const handed = takePendingStudioFiles();
-      if (handed.length) openFilesRef.current?.(handed);
+      if (handed.files.length) openFilesRef.current?.(handed.files, handed.meta);
     });
 
     const ro = new ResizeObserver(() => engine.resize({ width: box.clientWidth, height: box.clientHeight }));
@@ -87,7 +107,7 @@ export default function Studio() {
   const eng = () => engineRef.current;
 
   /* ── opening files ── */
-  const openFiles = useCallback(async (files: FileList | File[]) => {
+  const openFiles = useCallback(async (files: FileList | File[], meta?: StudioHandoffMeta) => {
     const engine = eng();
     if (!engine) return;
     for (const file of Array.from(files)) {
@@ -106,6 +126,7 @@ export default function Studio() {
           toast("error", `"${name}" isn't a file type the Studio can open yet. Right now it opens Bambu .lac, .svg and .dxf files.`);
           continue;
         }
+        if (meta?.layerColors) applyLayerColors(design, meta.layerColors);
         await engine.addDesign(design);
         const shapes = design.items.length;
         toast("ok", `Opened "${design.name}" (${shapes} shape${shapes === 1 ? "" : "s"}).`);
@@ -229,60 +250,50 @@ export default function Studio() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* ── Top bar ── */}
-      <header className="h-14 shrink-0 border-b border-border bg-background-raised flex items-center gap-3 px-4">
-        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2 text-foreground-muted hover:text-dd-gold-400 transition-colors" title="Back to Convert">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-dd-gold-400 to-dd-gold-600 flex items-center justify-center">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M4 4L12 20L20 4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </div>
-          <span className="font-bold tracking-tight">Vector<span className="text-dd-gold-400">Ease</span></span>
-        </div>
-        <nav className="flex items-center rounded-lg border border-border p-0.5 ml-2">
-          <button onClick={() => router.push("/dashboard")} className="px-3 py-1 text-xs font-medium rounded-md text-foreground-muted hover:text-foreground">Convert</button>
-          <span className="px-3 py-1 text-xs font-semibold rounded-md bg-dd-gold-400/15 text-dd-gold-400">Studio</span>
-        </nav>
-
-        <input
-          value={state?.projectName ?? ""}
-          onChange={(e) => {
-            const engine = eng();
-            if (!engine) return;
-            engine.projectName = e.target.value;
-            setState(engine.getState());
-          }}
-          onBlur={() => eng()?.commit()}
-          className="ml-3 min-w-0 flex-1 max-w-xs bg-transparent text-sm font-medium px-2 py-1 rounded-md border border-transparent hover:border-border focus:border-dd-gold-400/50 focus:outline-none"
-          aria-label="Design name"
-        />
-
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={newProject} className="btn-ghost" title="New design">
-            <FilePlus className="w-4 h-4" /> <span className="hidden md:inline">New</span>
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg or .dxf (⌘O)">
-            <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
-          </button>
-          <button onClick={exportSvg} className="btn-export" title="Export SVG for LightBurn, xTool, Glowforge… (⌘S)">
-            <Download className="w-4 h-4" /> Export SVG
-          </button>
-          <button onClick={exportLac} className="btn-export" title="Export a Bambu Suite project (.lac)">
-            <Download className="w-4 h-4" /> Export .lac
-          </button>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={OPEN_ACCEPT}
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) openFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </header>
+      <AppHeader
+        active="studio"
+        title={
+          <input
+            value={state?.projectName ?? ""}
+            onChange={(e) => {
+              const engine = eng();
+              if (!engine) return;
+              engine.projectName = e.target.value;
+              setState(engine.getState());
+            }}
+            onBlur={() => eng()?.commit()}
+            className="w-full bg-transparent text-sm font-medium px-2 py-1 rounded-md border border-transparent hover:border-border focus:border-dd-gold-400/50 focus:outline-none"
+            aria-label="Design name"
+          />
+        }
+        actions={
+          <>
+            <button onClick={newProject} className="btn-ghost" title="New design">
+              <FilePlus className="w-4 h-4" /> <span className="hidden md:inline">New</span>
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg or .dxf (⌘O)">
+              <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
+            </button>
+            <button onClick={exportSvg} className="btn-export" title="Export SVG for LightBurn, xTool, Glowforge… (⌘S)">
+              <Download className="w-4 h-4" /> Export SVG
+            </button>
+            <button onClick={exportLac} className="btn-export" title="Export a Bambu Suite project (.lac)">
+              <Download className="w-4 h-4" /> Export .lac
+            </button>
+          </>
+        }
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={OPEN_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) openFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
       <div className="flex-1 flex min-h-0">
         {/* ── Tool rail ── */}
@@ -400,19 +411,6 @@ export default function Studio() {
       )}
 
       <style jsx global>{`
-        .btn-ghost {
-          display: inline-flex; align-items: center; gap: 0.4rem;
-          padding: 0.45rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 500;
-          color: var(--foreground-muted); border: 1px solid var(--border); transition: all 150ms;
-        }
-        .btn-export {
-          display: inline-flex; align-items: center; gap: 0.5rem;
-          padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600;
-          color: #080B12; background: linear-gradient(to right, var(--dd-gold-500), var(--dd-gold-400));
-          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); transition: transform 150ms;
-        }
-        .btn-export:hover { transform: scale(1.02); }
-        .btn-ghost:hover { color: var(--dd-gold-400); border-color: rgba(245,166,35,0.4); }
         .panel-title {
           font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
           color: var(--dd-gold-400);

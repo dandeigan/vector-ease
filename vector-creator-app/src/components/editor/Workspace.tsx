@@ -2,7 +2,7 @@
 
 import { useEditorStore } from "@/store/useEditorStore";
 import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal, Sparkles, AlertTriangle } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isStudioFile, setPendingStudioFiles } from "@/lib/studio/handoff";
 import TuningPanel from "./TuningPanel";
@@ -21,6 +21,7 @@ export default function Workspace() {
     loadingMessage, setLoadingMessage,
     resultSvg, setResultSvg,
     options, setOptions,
+    openRequest, clearRequest,
   } = useEditorStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -32,6 +33,20 @@ export default function Workspace() {
   const [showDetection, setShowDetection] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
+
+  // Header buttons (New / Open) live in the top bar; they ask through the store.
+  useEffect(() => {
+    if (openRequest) fileInputRef.current?.click();
+  }, [openRequest]);
+  useEffect(() => {
+    if (!clearRequest) return;
+    setOriginalImage(null);
+    setResultSvg(null);
+    setDisplaySvg(null);
+    setShowDetection(false);
+    setDetectedColors([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearRequest]);
 
   const handleFile = (file: File) => {
     const reader = new FileReader();
@@ -184,9 +199,16 @@ export default function Workspace() {
   const svgToShow = displaySvg || resultSvg;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 h-[calc(100vh-5rem)]">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full">
       {/* ── Canvas Area ── */}
       <div className="relative rounded-2xl border border-border bg-card overflow-hidden flex flex-col min-h-0">
+        <input
+          type="file"
+          className="hidden"
+          ref={fileInputRef}
+          accept="image/png, image/jpeg, image/webp, .lac, .svg, .dxf"
+          onChange={(e) => { handleFileUpload(e); e.target.value = ""; }}
+        />
         {/* Processing overlay */}
         {isProcessing && (
           <div className="absolute inset-0 bg-background/85 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
@@ -223,7 +245,7 @@ export default function Workspace() {
             </p>
             <div className="mt-6 flex items-center gap-2 text-xs text-foreground-muted">
               <ImageIcon className="w-3.5 h-3.5" />
-              <span>Processed locally — your images never leave this device</span>
+              <span>Your image is only used to make your vector. We don&apos;t keep it.</span>
             </div>
 
             {/* Best-results guidance — helps users avoid common bad inputs (photos, watercolors, etc.)
@@ -256,13 +278,6 @@ export default function Workspace() {
                 </ul>
               </div>
             </div>
-            <input
-              type="file"
-              className="hidden"
-              ref={fileInputRef}
-              accept="image/png, image/jpeg, image/webp, .lac, .svg, .dxf"
-              onChange={handleFileUpload}
-            />
           </div>
         ) : (
           /* ── Preview ── */
@@ -271,18 +286,6 @@ export default function Workspace() {
               <h3 className="text-sm font-semibold text-foreground-muted">
                 {resultSvg ? "Vector Preview" : showDetection ? "Analyzing Image..." : "Original Image"}
               </h3>
-              <button
-                onClick={() => {
-                  setOriginalImage(null);
-                  setResultSvg(null);
-                  setDisplaySvg(null);
-                  setShowDetection(false);
-                  setDetectedColors([]);
-                }}
-                className="text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-dd-gold-400/10"
-              >
-                Clear
-              </button>
             </div>
 
             <div className="flex-1 overflow-auto checkered-bg flex items-center justify-center min-h-0 relative">
