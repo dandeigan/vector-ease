@@ -1,129 +1,120 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getAdminFirestore } from "@/lib/firebase/admin-db";
 
 /**
- * Stripe webhook handler — fires when payment events happen at Stripe.
+ * Stripe webhook: keeps each user's plan in Firestore in step with Stripe.
  *
- * Primary job: when a checkout session completes successfully, mark the
- * corresponding user's Firestore record as subscriptionStatus = "active"
- * so the 5-conversion paywall lifts and they get unlimited vectorizations.
+ *   checkout.session.completed      → unlock the account (plan "yearly" or "lifetime")
+ *   customer.subscription.updated   → yearly renewed / payment failed / set to cancel
+ *   customer.subscription.deleted   → yearly ended: account goes back to "expired"
  *
- * SECURITY: Stripe signs every webhook with a secret. We verify the signature
- * before trusting the payload — otherwise anyone could POST to this endpoint
- * and grant themselves a free lifetime account.
+ * Lifetime buyers are never downgraded by subscription events. Accounts from the
+ * old $39 Founder deal have no plan set and are treated as lifetime.
  *
- * Setup required:
- * 1. In Stripe dashboard → Developers → Webhooks → Add endpoint
- *    URL: https://app.vectorease.com/api/stripe/webhook
- *    Events: checkout.session.completed
- * 2. Copy the signing secret (whsec_...) and add to Vercel env vars as STRIPE_WEBHOOK_SECRET
- * 3. Add Firebase Admin SDK credentials to Vercel env vars:
- *    FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY
- *    (download a service account JSON from Firebase Console → Project Settings → Service Accounts)
+ * SECURITY: every event's signature is checked with STRIPE_WEBHOOK_SECRET first,
+ * otherwise anyone could POST here and unlock an account.
+ *
+ * Stripe setup (Developers → Webhooks → endpoint https://app.vectorease.com/api/stripe/webhook):
+ *   events: checkout.session.completed, customer.subscription.updated, customer.subscription.deleted
+ * Vercel env: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, FIREBASE_ADMIN_PROJECT_ID,
+ *   FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY
  */
 
 const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-03-25.dahlia" as any })
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-03-25.dahlia" as Stripe.LatestApiVersion })
   : null;
 
-// Initialize Firebase Admin SDK once per cold start.
-// Using a function so we can early-return if creds are missing.
-function getAdminFirestore() {
-  if (getApps().length > 0) {
-    return getFirestore();
-  }
-
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  // Vercel stores multi-line private keys with literal \n escapes — convert back to real newlines.
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n");
-
-  if (!projectId || !clientEmail || !privateKey) {
-    console.error("[stripe-webhook] Firebase Admin credentials not configured");
-    return null;
-  }
-
-  initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
-  });
-
-  return getFirestore();
+/** Stripe moved current_period_end from the subscription onto its items; read whichever is there. */
+function periodEnd(sub: Stripe.Subscription): string | null {
+  const s = sub as unknown as { current_period_end?: number; items?: { data?: { current_period_end?: number }[] } };
+  const t = s.current_period_end ?? s.items?.data?.[0]?.current_period_end;
+  return t ? new Date(t * 1000).toISOString() : null;
 }
 
+const idOf = (v: string | { id: string } | null | undefined) => (typeof v === "string" ? v : v?.id ?? null);
+
 export async function POST(req: NextRequest) {
-  if (!stripe) {
-    console.error("[stripe-webhook] Stripe not configured");
-    return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
-  }
-
+  if (!stripe) return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!webhookSecret) {
-    console.error("[stripe-webhook] STRIPE_WEBHOOK_SECRET not configured");
-    return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
-  }
+  if (!webhookSecret) return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
 
-  // Raw body is required for signature verification — DO NOT use req.json() here.
+  // The raw body is needed for the signature check; don't use req.json() here.
   const rawBody = await req.text();
   const signature = req.headers.get("stripe-signature");
-
-  if (!signature) {
-    console.error("[stripe-webhook] Missing stripe-signature header");
-    return NextResponse.json({ error: "Missing signature" }, { status: 400 });
-  }
+  if (!signature) return NextResponse.json({ error: "Missing signature" }, { status: 400 });
 
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch (err: any) {
-    console.error("[stripe-webhook] Signature verification failed:", err.message);
+  } catch (err) {
+    console.error("[stripe-webhook] Signature verification failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Handle the event types we care about.
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.client_reference_id;
-    const customerEmail = session.customer_email || session.customer_details?.email || null;
+  const db = getAdminFirestore();
+  if (!db) return NextResponse.json({ error: "firebase_not_configured" }, { status: 500 }); // Stripe retries
 
-    if (!userId) {
-      console.error("[stripe-webhook] No client_reference_id on session", session.id);
-      return NextResponse.json({ received: true, warning: "no_user_id" });
-    }
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const uid = session.client_reference_id || session.metadata?.uid;
+      if (!uid) {
+        console.error("[stripe-webhook] No user on session", session.id);
+        return NextResponse.json({ received: true, warning: "no_user_id" });
+      }
+      const plan = session.metadata?.plan === "yearly" ? "yearly" : "lifetime";
+      const subscriptionId = idOf(session.subscription as string | Stripe.Subscription | null);
 
-    const db = getAdminFirestore();
-    if (!db) {
-      // Don't NACK the webhook — just log. Stripe will retry but our setup is bad.
-      return NextResponse.json({ received: true, error: "firebase_not_configured" });
-    }
-
-    try {
-      // Mark the user as paid — unlocks unlimited vectorizations.
-      // The front-end onSnapshot listener (in AuthContext) will pick this up
-      // automatically and refresh the dashboard within a couple seconds.
-      await db.collection("users").doc(userId).update({
+      const update: Record<string, unknown> = {
         subscriptionStatus: "active",
+        plan,
         paidAt: new Date().toISOString(),
         stripeSessionId: session.id,
-        stripeCustomerId: session.customer || null,
+        stripeCustomerId: idOf(session.customer as string | Stripe.Customer | null),
         stripeAmountPaid: session.amount_total || 0,
-      });
-
-      console.log(`[stripe-webhook] Marked user ${userId} as active (session ${session.id})`);
-
-      // Optional: also push the upgrade event to Brevo so we can move the contact
-      // to a "Paid Customers" list and stop the trial nurture sequence.
-      // (Implement once we have a "Paid" list in Brevo — skipping for v1.)
-
-      return NextResponse.json({ received: true, userId });
-    } catch (err: any) {
-      console.error("[stripe-webhook] Firestore update failed:", err.message);
-      // Return 500 so Stripe retries. Stripe will retry several times over hours.
-      return NextResponse.json({ error: "Firestore update failed" }, { status: 500 });
+      };
+      if (subscriptionId) {
+        update.stripeSubscriptionId = subscriptionId;
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        update.planRenewsAt = periodEnd(sub);
+        update.planCancelsAtPeriodEnd = sub.cancel_at_period_end;
+      }
+      await db.collection("users").doc(uid).update(update);
+      console.log(`[stripe-webhook] ${uid} → active (${plan}, session ${session.id})`);
+      return NextResponse.json({ received: true });
     }
+
+    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      const sub = event.data.object as Stripe.Subscription;
+      const uid = sub.metadata?.uid;
+      if (!uid) return NextResponse.json({ received: true, warning: "no_user_id" });
+
+      const ref = db.collection("users").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) return NextResponse.json({ received: true, warning: "no_user" });
+      const plan = snap.get("plan");
+      // Lifetime (or old Founder deal, no plan) wins over any subscription change.
+      if (plan !== "yearly") return NextResponse.json({ received: true, skipped: "not_yearly" });
+      // Ignore events about an older subscription than the one on file.
+      const current = snap.get("stripeSubscriptionId");
+      if (current && current !== sub.id) return NextResponse.json({ received: true, skipped: "other_subscription" });
+
+      // past_due keeps access while Stripe retries the card.
+      const live = event.type !== "customer.subscription.deleted" && ["active", "trialing", "past_due"].includes(sub.status);
+      await ref.update({
+        subscriptionStatus: live ? "active" : "expired",
+        stripeSubscriptionId: sub.id,
+        planRenewsAt: periodEnd(sub),
+        planCancelsAtPeriodEnd: sub.cancel_at_period_end,
+      });
+      console.log(`[stripe-webhook] ${uid} yearly → ${live ? "active" : "expired"} (${sub.status})`);
+      return NextResponse.json({ received: true });
+    }
+  } catch (err) {
+    console.error("[stripe-webhook] Firestore update failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "update_failed" }, { status: 500 }); // Stripe retries over several hours
   }
 
-  // Acknowledge other event types but don't act on them.
   return NextResponse.json({ received: true, event_type: event.type });
 }

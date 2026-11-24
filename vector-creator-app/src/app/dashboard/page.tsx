@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Flame } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import { PRICE_LINE } from "@/lib/pricing";
 import ConvertExports from "@/components/editor/ConvertExports";
 import Workspace from "@/components/editor/Workspace";
 import UpgradeButton from "@/components/UpgradeButton";
@@ -46,7 +47,7 @@ export default function DashboardPage() {
           <Flame className="w-4 h-4 text-dd-gold-400" />
           <span className="text-xs font-medium text-dd-gold-400">
             {remaining === 0
-              ? `You've used all ${FREE_VECTORIZATIONS} free images. Lock in lifetime access for $39.`
+              ? `You've used all ${FREE_VECTORIZATIONS} free images. Go unlimited for ${PRICE_LINE}.`
               : `${remaining} of ${FREE_VECTORIZATIONS} free images left`}
           </span>
           <UpgradeButton />

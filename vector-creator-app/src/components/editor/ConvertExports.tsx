@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Download, FileCode2, FilePlus, Flame, FolderOpen, ImagePlus, LayoutTemplate } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { useAuth } from "@/components/auth/AuthContext";
+import PricingDialog from "@/components/PricingDialog";
 import ExportDoneDialog, { exportDialogSkipped, type ExportInfo } from "@/components/studio/ExportDoneDialog";
 import { importSvg } from "@/lib/studio/import-svg";
 import { buildLac, type LacShape } from "@/lib/studio/export-lac";
@@ -47,7 +48,6 @@ export default function ConvertExports() {
   const { resultSvg, layerSettings, hiddenLayers, originalImage, requestOpen, requestClear } = useEditorStore();
   const [busy, setBusy] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [exported, setExported] = useState<ExportInfo | null>(null);
   const lastExport = useRef<{ blob: Blob; file: string } | null>(null);
@@ -166,24 +166,6 @@ export default function ConvertExports() {
     router.push("/studio");
   };
 
-  const handleCheckout = async () => {
-    if (!user) return;
-    setCheckoutLoading(true);
-    try {
-      const res = await fetch("/api/checkout_sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.uid }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else setCheckoutLoading(false);
-    } catch (err) {
-      console.error("[paywall checkout] Failed:", err);
-      setCheckoutLoading(false);
-    }
-  };
-
   const why = !resultSvg ? "Upload an image and click Apply & Vectorize first" : visibleLayers.length ? undefined : "Every layer is hidden";
 
   return (
@@ -234,28 +216,11 @@ export default function ConvertExports() {
       )}
 
       {showPaywall && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
-          <div role="dialog" aria-modal="true" className="max-w-md w-full rounded-2xl border border-dd-gold-400/30 bg-card p-8 glow-gold-strong">
-            <div className="w-14 h-14 rounded-2xl bg-dd-gold-400/10 text-dd-gold-400 flex items-center justify-center mb-5 mx-auto">
-              <Flame className="w-7 h-7" />
-            </div>
-            <h3 className="text-2xl font-bold text-center mb-2">You&apos;ve used your {FREE_VECTORIZATIONS} free images</h3>
-            <p className="text-sm text-foreground-muted text-center mb-6 leading-relaxed">
-              If VectorEase saved you time, the Founder&apos;s Lifetime Deal locks in $39 USD forever.
-              No subscription. Capped at 100 customers, then $79.
-            </p>
-            <button
-              onClick={handleCheckout}
-              disabled={checkoutLoading}
-              className="w-full py-3 rounded-xl text-sm font-semibold text-center bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
-            >
-              {checkoutLoading ? "Opening checkout..." : "Claim Founder Seat — $39"}
-            </button>
-            <button onClick={() => setShowPaywall(false)} className="block w-full mt-3 py-2 text-xs font-medium text-foreground-muted hover:text-dd-gold-400 transition-colors">
-              Not now
-            </button>
-          </div>
-        </div>
+        <PricingDialog
+          onClose={() => setShowPaywall(false)}
+          title={`You've used your ${FREE_VECTORIZATIONS} free images`}
+          subtitle="Keep going with unlimited images and every export."
+        />
       )}
     </>
   );

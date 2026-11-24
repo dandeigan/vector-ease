@@ -184,13 +184,13 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Founders Club Callout */}
+        {/* Free trial callout */}
         <div className="hidden xl:block absolute left-[420px] bottom-[24px] w-[320px] pointer-events-none select-none">
           <div 
             className="text-[#EF4444] font-marker text-2xl leading-tight -rotate-3 max-w-[320px]"
             style={{ fontFamily: 'var(--font-permanent-marker)' }}
           >
-            Not a member yet? Start your free trial. Founders Club locks in LIFETIME access when it ends.
+            New here? Try 5 images free. Then $35 a year, or $95 for life.
           </div>
           <div className="relative mt-2 h-[120px] w-[200px] ml-4">
             <svg 

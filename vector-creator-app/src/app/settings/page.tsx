@@ -5,14 +5,20 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
-import { updateUserRecord } from "@/lib/firebase/users";
+import { updateUserRecord, FREE_VECTORIZATIONS } from "@/lib/firebase/users";
+import PricingDialog from "@/components/PricingDialog";
+import { openBillingPortal } from "@/lib/checkout-client";
+import { PRICE_LINE } from "@/lib/pricing";
 import {
   ArrowLeft, Camera, User, Lock, CreditCard,
   Calendar, Zap, Check, AlertCircle,
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, userRecord, loading, trialDaysLeft, trialExpired } = useAuth();
+  const { user, userRecord, loading } = useAuth();
+  const [showPricing, setShowPricing] = useState(false);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState("");
   const router = useRouter();
 
   // Profile state
@@ -122,6 +128,17 @@ export default function SettingsPage() {
     const date = ts.toDate ? ts.toDate() : new Date(ts);
     return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   };
+  const isPaid = userRecord?.subscriptionStatus === "active" || userRecord?.role === "superadmin";
+  const isYearly = isPaid && userRecord?.plan === "yearly";
+  const freeLeft = userRecord ? Math.max(0, userRecord.vectorizationsRemaining ?? FREE_VECTORIZATIONS) : FREE_VECTORIZATIONS;
+  const planTitle = userRecord?.role === "superadmin" ? "Admin" : !isPaid ? "Free trial" : isYearly ? "VectorEase Yearly" : "VectorEase Lifetime";
+  const planDetail = !isPaid
+    ? `${freeLeft} of ${FREE_VECTORIZATIONS} free images left`
+    : isYearly
+      ? userRecord?.planCancelsAtPeriodEnd
+        ? `Cancelled. Full access until ${formatDate(userRecord?.planRenewsAt)}.`
+        : "Unlimited images and every export. Renews yearly."
+      : "Unlimited images and every export, for life.";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -293,34 +310,23 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between p-4 rounded-xl bg-background-overlay border border-border-subtle">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  userRecord?.subscriptionStatus === "active"
-                    ? "bg-emerald-500/10 text-emerald-400"
-                    : "bg-dd-gold-400/10 text-dd-gold-400"
+                  isPaid ? "bg-emerald-500/10 text-emerald-400" : "bg-dd-gold-400/10 text-dd-gold-400"
                 }`}>
                   <Zap className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">
-                    {userRecord?.subscriptionStatus === "active" ? "VectorEase Pro" : "Free Trial"}
-                  </p>
-                  <p className="text-xs text-foreground-muted">
-                    {userRecord?.subscriptionStatus === "active"
-                      ? "Full access to all features"
-                      : trialExpired
-                        ? "Trial expired"
-                        : `${trialDaysLeft} day${trialDaysLeft !== 1 ? "s" : ""} remaining`
-                    }
-                  </p>
+                  <p className="text-sm font-semibold">{planTitle}</p>
+                  <p className="text-xs text-foreground-muted">{planDetail}</p>
                 </div>
               </div>
               <span className={`px-2.5 py-1 rounded-md text-xs font-medium border ${
-                userRecord?.subscriptionStatus === "active"
+                isPaid
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : trialExpired
+                  : freeLeft === 0
                     ? "bg-red-500/10 text-red-400 border-red-500/20"
                     : "bg-dd-gold-400/10 text-dd-gold-400 border-dd-gold-400/20"
               }`}>
-                {userRecord?.subscriptionStatus === "active" ? "Active" : trialExpired ? "Expired" : "Trial"}
+                {isPaid ? "Active" : freeLeft === 0 ? "Used up" : "Free trial"}
               </span>
             </div>
 
@@ -337,30 +343,46 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-1.5 mb-1">
                   <Calendar className="w-3 h-3 text-foreground-muted" />
                   <span className="text-[10px] uppercase tracking-wider text-foreground-muted font-medium">
-                    {userRecord?.subscriptionStatus === "active" ? "Next Billing" : "Trial Ends"}
+                    {isYearly ? (userRecord?.planCancelsAtPeriodEnd ? "Ends" : "Renews") : isPaid ? "Paid" : "Free images left"}
                   </span>
                 </div>
-                <p className="text-xs font-medium">{formatDate(userRecord?.trialExpiresAt)}</p>
+                <p className="text-xs font-medium">
+                  {isYearly ? formatDate(userRecord?.planRenewsAt) : isPaid ? "Once, for life" : `${freeLeft} of ${FREE_VECTORIZATIONS}`}
+                </p>
               </div>
             </div>
 
             {/* Upgrade / Manage */}
-            {userRecord?.subscriptionStatus !== "active" && (
+            {!isPaid && (
               <div className="pt-2">
-                <button className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:shadow-xl transition-all hover:scale-[1.01]">
+                <button
+                  onClick={() => setShowPricing(true)}
+                  className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12] shadow-lg glow-gold-strong hover:shadow-xl transition-all hover:scale-[1.01]"
+                >
                   <Zap className="w-4 h-4" />
-                  Upgrade to Pro — $85
+                  Upgrade: {PRICE_LINE}
                 </button>
               </div>
             )}
 
-            {userRecord?.subscriptionStatus === "active" && (
-              <button className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all">
+            {isPaid && (
+              <button
+                onClick={async () => {
+                  setBillingError("");
+                  setBillingLoading(true);
+                  const err = await openBillingPortal();
+                  if (err) { setBillingError(err); setBillingLoading(false); }
+                }}
+                disabled={billingLoading}
+                className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:border-dd-blue-400/30 hover:text-dd-blue-400 transition-all disabled:opacity-50"
+              >
                 <CreditCard className="w-3.5 h-3.5" />
-                Manage Billing & Payment Method
+                {billingLoading ? "Opening..." : isYearly ? "Manage billing (card, receipts, cancel)" : "Receipts & billing"}
               </button>
             )}
+            {billingError && <p className="text-xs text-red-400 text-center">{billingError}</p>}
           </div>
+          {showPricing && <PricingDialog onClose={() => setShowPricing(false)} />}
         </section>
       </main>
     </div>

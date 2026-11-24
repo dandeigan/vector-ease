@@ -20,6 +20,12 @@ export interface UserRecord {
   vectorizationsRemaining?: number;
   /** SHA-256 hashes of source images the user has already downloaded any format of. Used to prevent double-counting multi-format downloads of the same image. */
   downloadedImageFingerprints?: string[];
+  /** Set by the Stripe webhook. Paid accounts without a plan are from the old $39 Founder deal (lifetime). */
+  plan?: "yearly" | "lifetime";
+  /** Yearly only: ISO date the plan renews (or ends, if set to cancel). */
+  planRenewsAt?: string | null;
+  /** Yearly only: true once the user has cancelled; access lasts until planRenewsAt. */
+  planCancelsAtPeriodEnd?: boolean;
 }
 
 /** Default free vectorizations granted to new trial signups */
