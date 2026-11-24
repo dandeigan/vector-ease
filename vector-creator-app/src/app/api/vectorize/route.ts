@@ -7,6 +7,7 @@ const PathSimplifyMode_Polygon = 1;
 const PathSimplifyMode_Spline = 2;
 import sharp from "sharp";
 import { getVerifiedUid } from "@/lib/firebase/verify-token";
+import { buildPalette, type Rgb } from "@/lib/vectorizer/palette";
 
 function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -90,13 +91,17 @@ export async function POST(req: NextRequest) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
     let imageBuffer: Buffer<ArrayBuffer> = Buffer.from(base64Data, "base64") as Buffer<ArrayBuffer>;
 
-    const targetLayers = numberOfColors || 7;
+    const targetLayers = Math.min(16, Math.max(2, Math.round(Number(numberOfColors) || 7)));
 
-    // Step 1: Pre-process — quantize image to detected palette
-    // This eliminates anti-aliasing, JPEG artifacts, and gradient noise
-    if (detectedPalette && detectedPalette.length > 0) {
-      imageBuffer = await quantizeImageToPalette(imageBuffer, detectedPalette);
-    }
+    // Step 1: Pick the palette. Use the auto-detected colours only when they match
+    // the layer count asked for; otherwise build exactly that many from the image.
+    // Always quantize, so the result never has more colours than the slider says.
+    let palette: Rgb[] =
+      Array.isArray(detectedPalette) && detectedPalette.length === targetLayers
+        ? detectedPalette
+        : await buildPalette(imageBuffer, targetLayers);
+    if (!palette.length) palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }];
+    imageBuffer = await quantizeImageToPalette(imageBuffer, palette);
 
     // Step 2: Run VTracer on the clean, flat-color image
     // Low precision + high layer difference since image is already quantized
@@ -118,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     // Step 3: Snap all SVG fill colors to the nearest palette color
     // VTracer may produce slight color variations even from a quantized image
-    if (detectedPalette && detectedPalette.length > 0) {
+    {
       svg = svg.replace(
         /fill="#([0-9a-fA-F]{6})"/g,
         (full, hex) => {
@@ -127,7 +132,7 @@ export async function POST(req: NextRequest) {
           const b = parseInt(hex.slice(4, 6), 16);
           let minDist = Infinity;
           let bestHex = hex;
-          for (const pc of detectedPalette) {
+          for (const pc of palette) {
             const dist = (r - pc.r) ** 2 + (g - pc.g) ** 2 + (b - pc.b) ** 2;
             if (dist < minDist) {
               minDist = dist;
