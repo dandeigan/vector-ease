@@ -19,6 +19,9 @@ export async function traceImageToSVG(imageUrl: string, options: TracingOptions)
       numberOfColors: options.numberOfColors,
       smoothness: options.smoothness,
       detectedPalette: options.customPalette || null,
+      lineArt: options.lineArt,
+      inkTones: options.inkTones,
+      inkSensitivity: options.inkSensitivity,
     }),
   });
 

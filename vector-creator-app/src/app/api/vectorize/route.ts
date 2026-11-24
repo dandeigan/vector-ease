@@ -8,6 +8,22 @@ const PathSimplifyMode_Spline = 2;
 import sharp from "sharp";
 import { getVerifiedUid } from "@/lib/firebase/verify-token";
 import { buildPalette, type Rgb } from "@/lib/vectorizer/palette";
+import { prepareLineArt, stripPaper } from "@/lib/vectorizer/line-art";
+
+const hexToRgb2 = (h: string): Rgb => ({ r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) });
+
+/** Snap every fill to the nearest colour in the palette (VTracer blends colours slightly). */
+function snapFills(svg: string, palette: Rgb[]): string {
+  return svg.replace(/fill="#([0-9a-fA-F]{6})"/g, (_full, hex) => {
+    const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    let best = palette[0], bd = Infinity;
+    for (const pc of palette) {
+      const d = (r - pc.r) ** 2 + (g - pc.g) ** 2 + (b - pc.b) ** 2;
+      if (d < bd) { bd = d; best = pc; }
+    }
+    return `fill="#${[best.r, best.g, best.b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}"`;
+  });
+}
 
 function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -82,7 +98,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { imageBase64, numberOfColors, smoothness, detectedPalette } = await req.json();
+    const { imageBase64, numberOfColors, smoothness, detectedPalette, lineArt, inkTones, inkSensitivity } = await req.json();
 
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
@@ -90,6 +106,30 @@ export async function POST(req: NextRequest) {
 
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
     let imageBuffer: Buffer<ArrayBuffer> = Buffer.from(base64Data, "base64") as Buffer<ArrayBuffer>;
+
+    // Line-art mode: ink vs paper by brightness, paper dropped, fine detail kept.
+    if (lineArt) {
+      const { png, inkHexes } = await prepareLineArt(imageBuffer, { tones: Number(inkTones) || 1, sensitivity: Number(inkSensitivity ?? 50) });
+      let svg = await vectorize(png as Buffer<ArrayBuffer>, {
+        colorMode: ColorMode_Color,
+        hierarchical: 1,      // Cutout: each ink shape stands alone, so the paper can be removed.
+        filterSpeckle: 2,     // Keep small strokes (cloud edges, hatching, dots).
+        colorPrecision: 8,    // Colours are already exact.
+        layerDifference: 1,
+        mode: smoothness === 0 ? PathSimplifyMode_Polygon : PathSimplifyMode_Spline,
+        cornerThreshold: 60,
+        lengthThreshold: 3.5,
+        maxIterations: 10,
+        spliceThreshold: 45,
+        pathPrecision: 3,
+      });
+      svg = stripPaper(snapFills(svg, ["FFFFFF", ...inkHexes].map(hexToRgb2)));
+      svg = svg.replace(
+        /(<svg[^>]*?)width="(\d+)"([^>]*?)height="(\d+)"/,
+        (_, pre, w, mid, h) => `${pre}viewBox="0 0 ${w} ${h}"${mid}width="100%" height="100%"`
+      );
+      return NextResponse.json({ svg });
+    }
 
     const targetLayers = Math.min(16, Math.max(2, Math.round(Number(numberOfColors) || 7)));
 
@@ -123,26 +163,7 @@ export async function POST(req: NextRequest) {
 
     // Step 3: Snap all SVG fill colors to the nearest palette color
     // VTracer may produce slight color variations even from a quantized image
-    {
-      svg = svg.replace(
-        /fill="#([0-9a-fA-F]{6})"/g,
-        (full, hex) => {
-          const r = parseInt(hex.slice(0, 2), 16);
-          const g = parseInt(hex.slice(2, 4), 16);
-          const b = parseInt(hex.slice(4, 6), 16);
-          let minDist = Infinity;
-          let bestHex = hex;
-          for (const pc of palette) {
-            const dist = (r - pc.r) ** 2 + (g - pc.g) ** 2 + (b - pc.b) ** 2;
-            if (dist < minDist) {
-              minDist = dist;
-              bestHex = [pc.r, pc.g, pc.b].map((v: number) => v.toString(16).padStart(2, "0")).join("");
-            }
-          }
-          return `fill="#${bestHex.toUpperCase()}"`;
-        }
-      );
-    }
+    svg = snapFills(svg, palette);
 
     // Step 4: Make SVG scalable
     svg = svg.replace(

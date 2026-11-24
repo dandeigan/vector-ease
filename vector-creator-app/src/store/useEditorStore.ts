@@ -23,6 +23,12 @@ export interface TracingOptions {
   pathOmit: number;
   smoothness: number;
   customPalette: PaletteColor[] | null;
+  /** Line-art mode: ink vs paper by brightness, paper left out. */
+  lineArt: boolean;
+  /** Line-art ink layers, darkest first (1–3). */
+  inkTones: number;
+  /** Line-art faint-line pickup, 0–100 (50 = automatic). */
+  inkSensitivity: number;
 }
 
 const defaultOptions: TracingOptions = {
@@ -34,6 +40,9 @@ const defaultOptions: TracingOptions = {
   pathOmit: 4,       // Lower threshold — keep smaller detail paths
   smoothness: 1,     // 0 = linear, 1 = smooth curves
   customPalette: null,
+  lineArt: false,
+  inkTones: 1,
+  inkSensitivity: 50,
 };
 
 interface EditorState {

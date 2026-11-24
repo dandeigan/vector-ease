@@ -103,19 +103,23 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
    * Each tunes the layer count + smoothness for the typical case.
    * Users can still adjust manually below — these are just starting points.
    */
-  const applyPreset = (preset: "logo" | "sticker" | "detail") => {
+  const applyPreset = (preset: "logo" | "sticker" | "detail" | "lineart") => {
     switch (preset) {
       case "logo":
         // Clean logos / wordmarks / simple silhouettes — few colors, smooth curves.
-        setOptions({ numberOfColors: 3, smoothness: 1, customPalette: null });
+        setOptions({ numberOfColors: 3, smoothness: 1, customPalette: null, lineArt: false });
         break;
       case "sticker":
         // Text-heavy stickers — angular preserves sharp letterforms; few colors.
-        setOptions({ numberOfColors: 3, smoothness: 0, customPalette: null });
+        setOptions({ numberOfColors: 3, smoothness: 0, customPalette: null, lineArt: false });
         break;
       case "detail":
         // Intricate designs — more layers preserve fine elements; smooth curves.
-        setOptions({ numberOfColors: 7, smoothness: 1, customPalette: null });
+        setOptions({ numberOfColors: 7, smoothness: 1, customPalette: null, lineArt: false });
+        break;
+      case "lineart":
+        // Drawings, engravings, sketches: ink on paper. Keeps fine lines, drops the paper.
+        setOptions({ lineArt: true, inkTones: 1, inkSensitivity: 50, smoothness: 1 });
         break;
     }
   };
@@ -350,7 +354,7 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
             <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
             <span className="text-[10px] font-bold uppercase tracking-wider text-dd-gold-400">Quick Start</span>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             <button
               onClick={() => applyPreset("logo")}
               disabled={disabled}
@@ -375,13 +379,97 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
             >
               Detail
             </button>
+            <button
+              onClick={() => applyPreset("lineart")}
+              disabled={disabled}
+              className={`py-2 rounded-lg text-[11px] font-medium border transition-all duration-150 disabled:opacity-30 ${
+                options.lineArt
+                  ? "border-dd-gold-400/50 text-dd-gold-400 bg-dd-gold-400/[0.06]"
+                  : "border-border bg-background/40 text-foreground-muted hover:border-dd-gold-400/40 hover:text-dd-gold-400 hover:bg-dd-gold-400/[0.04]"
+              }`}
+              title="Drawings, engravings and sketches: one ink on paper"
+            >
+              Line art
+            </button>
           </div>
           <p className="text-[10px] text-foreground-muted mt-2 leading-relaxed">
             Pick a starting point, then fine-tune below if needed.
           </p>
         </div>
 
+        {/* Line art mode */}
+        <div className={`rounded-xl border p-3 ${options.lineArt ? "border-dd-gold-400/40 bg-dd-gold-400/[0.04]" : "border-border"}`}>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <PenTool className="w-3.5 h-3.5 text-dd-gold-400" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">Line art mode</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={options.lineArt}
+              aria-label="Line art mode"
+              onClick={() => setOptions({ lineArt: !options.lineArt })}
+              disabled={disabled}
+              className={`ml-auto relative w-9 h-5 rounded-full transition-colors disabled:opacity-40 ${options.lineArt ? "bg-dd-gold-400" : "bg-border"}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${options.lineArt ? "translate-x-4" : ""}`} />
+            </button>
+          </label>
+          <p className="text-[11px] text-foreground-muted mt-1.5 leading-relaxed">
+            For drawings, engravings and sketches. Keeps fine lines and leaves the paper out.
+          </p>
+
+          {options.lineArt && (
+            <div className="mt-3 space-y-4">
+              <div>
+                <div className="text-[11px] font-semibold text-foreground mb-1.5">Ink layers</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[1, 2, 3].map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setOptions({ inkTones: t })}
+                      disabled={disabled}
+                      className={`py-1.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-40 ${
+                        options.inkTones === t
+                          ? "border-dd-gold-400/50 bg-dd-gold-400/10 text-dd-gold-400"
+                          : "border-border text-foreground-muted hover:bg-card-hover"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
+                  {options.inkTones === 1
+                    ? "All lines on one layer."
+                    : `Lines split by darkness into ${options.inkTones} layers, darkest first. Give lighter ones less power for shading.`}
+                </p>
+              </div>
+              <div>
+                <div className="flex items-center mb-1.5">
+                  <span className="text-[11px] font-semibold text-foreground">Faint lines</span>
+                  <span className="ml-auto text-[10px] font-mono text-dd-gold-400">
+                    {options.inkSensitivity === 50 ? "Auto" : options.inkSensitivity < 50 ? "Fewer" : "More"}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0" max="100" step="5"
+                  value={options.inkSensitivity}
+                  onChange={(e) => setOptions({ inkSensitivity: parseInt(e.target.value) })}
+                  disabled={disabled}
+                  aria-label="Faint lines"
+                />
+                <div className="flex justify-between text-[10px] text-foreground-muted mt-1">
+                  <span>Strong lines only</span>
+                  <span>Pick up faint lines</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Colors / Layers */}
+        {!options.lineArt && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Layers className="w-3.5 h-3.5 text-dd-gold-400" />
@@ -397,6 +485,7 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           />
           <p className="text-[11px] text-foreground-muted mt-1.5">Each color becomes a separate LightBurn layer</p>
         </div>
+        )}
 
         {/* Smoothness */}
         <div>
