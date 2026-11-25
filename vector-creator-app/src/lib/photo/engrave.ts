@@ -15,7 +15,7 @@
  */
 
 export type DitherId = "jarvis" | "stucki" | "floyd" | "atkinson" | "grayscale";
-export type MaterialId = "wood" | "leather" | "paper" | "slate" | "darkmetal";
+export type MaterialId = "wood" | "hardwood" | "softwood" | "leather" | "paper" | "slate" | "darkmetal";
 
 export interface Material {
   id: MaterialId;
@@ -33,6 +33,8 @@ export interface Material {
 
 export const MATERIALS: Material[] = [
   { id: "wood", label: "Wood", hint: "Plywood, basswood, MDF. Burns dark quickly, so mid-tones are lightened.", invert: false, gamma: 0.78, dither: "jarvis", base: "#E7CFA5", mark: "#4A2C16" },
+  { id: "hardwood", label: "Maple / hardwood", hint: "Maple, birch, cherry, alder. Burns dark and spreads, so mid-tones are lightened a lot more than Wood.", invert: false, gamma: 0.62, dither: "jarvis", base: "#EBD8B7", mark: "#4A2C16" },
+  { id: "softwood", label: "Pine / softwood", hint: "Pine, spruce, cedar. The soft grain burns much darker than the hard grain, so mid-tones are lightened the most.", invert: false, gamma: 0.55, dither: "jarvis", base: "#EAD3A6", mark: "#52301A" },
   { id: "leather", label: "Leather", hint: "Real and faux leather.", invert: false, gamma: 0.85, dither: "jarvis", base: "#B07A4C", mark: "#3B2213" },
   { id: "paper", label: "Card / paper", hint: "Card stock, cork, cardboard.", invert: false, gamma: 0.9, dither: "jarvis", base: "#F2EBDD", mark: "#5A4632" },
   { id: "slate", label: "Slate / tile", hint: "The laser makes light marks, so the image is flipped.", invert: true, gamma: 0.9, dither: "stucki", base: "#33363A", mark: "#C9CCCF" },
@@ -80,6 +82,12 @@ export interface EngraveOptions {
   invertBackground?: boolean;
   /** Burn sharp text and logos solid instead of as dots. */
   crispGraphics?: boolean;
+  /**
+   * Burn spread 0..5: how much each laser dot spreads into its neighbours on
+   * this wood (dot gain). Higher thins out the mid-tones before dithering so
+   * eyes and skin don't fill in. 0 = off. Pick the level with the test card.
+   */
+  burnSpread?: number;
 }
 
 export const DEFAULT_ENGRAVE: EngraveOptions = {
@@ -98,6 +106,7 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   solidBlacks: true,
   invertBackground: false,
   crispGraphics: false,
+  burnSpread: 0,
 };
 
 /** Biggest image we'll make, so the browser never stalls (about 600 mm at 254 DPI). */
@@ -660,6 +669,7 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   const k = o.contrast >= 0 ? 1 + o.contrast / 25 : 1 + o.contrast / 60;
   const b = o.brightness * 2;
   const gamma = mat.gamma;
+  const spread = Math.max(0, Math.min(5, o.burnSpread ?? 0)) * 0.4;
   // Big solid-black areas of the photo (poster backgrounds): share of nearby
   // pixels that are black. Black pixels in a mostly-black area burn solid;
   // shadows inside a face or car are too broken up to qualify.
@@ -700,6 +710,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // contrast blows up tiny JPEG noise in a black poster background into a
     // scatter of stray dots that stops where the noise stops.
     else if (flatBlack && gray[p] <= 10 && flatBlack[p] >= 0.6) x = o.invert ? 255 : 0;
+    // Burn spread: each dot burns wider than its slot, so a patch with share d
+    // of dots looks like 1-(1-d)^(1+s) burned. Fire fewer dots to land on the
+    // tone we want. Pure black and pure white are unchanged.
+    if (spread > 0) x = 255 * Math.pow(Math.max(0, Math.min(255, x)) / 255, 1 / (1 + spread));
     // Snap near-white / near-black so highlights and shadows don't get stray dots.
     if (x >= 247) x = 255;
     else if (x <= 6) x = 0;
@@ -731,7 +745,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
       for (let p = 0; p < n; p++) out[p] = tones[p];
     } else {
       out = dither(tones.slice(), W, H, o.dither);
-      if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
+      // Lone dots are skipped when Burn spread is on: on a wood that spreads,
+      // those sparse dots are the light skin tones, and removing them leaves
+      // blank white blotches with hard edges.
+      if ((o.cleanDots ?? true) && !(spread > 0)) cleanLoneDots(out, W, H);
     }
     if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
     if (flatBlack) crispPosterText(out, gray, alpha, flatBlack, cut?.flip ?? null, W, H, o, poster);

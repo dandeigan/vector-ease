@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles, Type } from "lucide-react";
+import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles, Type, Flame, Download } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { DEFAULT_ENGRAVE, DITHERS, DPI_CHOICES, MATERIALS, materialById, type MaterialId } from "@/lib/photo/engrave";
-import { removeBackground } from "@/lib/vectorizer/background-remove";
+import { removeBackground, loadImage } from "@/lib/vectorizer/background-remove";
+import { buildTestCard, busiestSquare, cardCropPx } from "@/lib/photo/test-card";
+import { setPngDpi } from "@/lib/photo/png-dpi";
 
 /** Convert's side panel in Photo engrave mode. */
 export default function PhotoPanel({ disabled }: { disabled: boolean }) {
@@ -12,6 +14,61 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
   const [bgBusy, setBgBusy] = useState<string | null>(null);
   const [bgError, setBgError] = useState<string | null>(null);
   const mat = materialById(engrave.material);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  /** Burn spread test card: rows 0-5 of the user's photo crop plus grey steps, as a laser PNG. */
+  const downloadTestCard = async () => {
+    const source = engrave.removeBackground ? cutoutImage : originalImage;
+    if (!source) return;
+    setCardBusy(true);
+    setCardError(null);
+    try {
+      const img = await loadImage(source);
+      // Find the busiest mid-tone square (usually the eyes) on a small copy.
+      const k = Math.min(1, 400 / Math.max(img.naturalWidth, img.naturalHeight));
+      const sc = document.createElement("canvas");
+      sc.width = Math.max(1, Math.round(img.naturalWidth * k));
+      sc.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const sctx = sc.getContext("2d", { willReadFrequently: true })!;
+      if (!engrave.removeBackground) { sctx.fillStyle = "#ffffff"; sctx.fillRect(0, 0, sc.width, sc.height); }
+      sctx.drawImage(img, 0, 0, sc.width, sc.height);
+      const sq = busiestSquare(sctx.getImageData(0, 0, sc.width, sc.height).data, sc.width, sc.height);
+      const side = sq.side * Math.min(img.naturalWidth, img.naturalHeight);
+      const cs = cardCropPx(engrave.dpi);
+      const c = document.createElement("canvas");
+      c.width = c.height = cs;
+      const ctx = c.getContext("2d", { willReadFrequently: true })!;
+      ctx.imageSmoothingQuality = "high";
+      if (!engrave.removeBackground) { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cs, cs); }
+      ctx.drawImage(img, sq.x * img.naturalWidth, sq.y * img.naturalHeight, side, side, 0, 0, cs, cs);
+      const card = buildTestCard(ctx.getImageData(0, 0, cs, cs).data, engrave);
+      const out = document.createElement("canvas");
+      out.width = card.w;
+      out.height = card.h;
+      const octx = out.getContext("2d")!;
+      const id = octx.createImageData(card.w, card.h);
+      for (let p = 0, i = 0; p < card.pixels.length; p++, i += 4) {
+        id.data[i] = id.data[i + 1] = id.data[i + 2] = card.pixels[p];
+        id.data[i + 3] = 255;
+      }
+      octx.putImageData(id, 0, 0);
+      const raw = await new Promise<Blob>((res, rej) => out.toBlob((b) => (b ? res(b) : rej(new Error("PNG failed"))), "image/png"));
+      const blob = new Blob([setPngDpi(new Uint8Array(await raw.arrayBuffer()), engrave.dpi) as BlobPart], { type: "image/png" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vectorease-test-card-${engrave.material}-${engrave.dpi}dpi.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setCardError(err instanceof Error ? err.message : "Couldn't make the test card.");
+    } finally {
+      setCardBusy(false);
+    }
+  };
 
   const toggleBackground = async () => {
     if (engrave.removeBackground) { setEngrave({ removeBackground: false }); return; }
@@ -135,6 +192,31 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
         <Slider icon={Focus} label="Sharpness" value={engrave.detail} min={0} max={100} onChange={(v) => setEngrave({ detail: v })} disabled={disabled} />
       </div>
 
+      {/* Burn spread */}
+      <div className="rounded-xl border border-border p-3">
+        <Slider
+          icon={Flame}
+          label="Burn spread"
+          hint="If eyes and skin burn too dark, raise this. Each laser dot burns wider than it should on many woods, so the mid-tones fill in. Higher fires fewer dots in the mid-tones; pure black and white stay the same. 0 = off."
+          value={engrave.burnSpread ?? 0}
+          min={0}
+          max={5}
+          onChange={(v) => setEngrave({ burnSpread: v })}
+          disabled={disabled}
+        />
+        <button
+          onClick={downloadTestCard}
+          disabled={disabled || cardBusy || !originalImage}
+          className="mt-3 w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-dd-gold-400/40 text-dd-gold-400 hover:bg-dd-gold-400/10 disabled:opacity-40"
+        >
+          <Download className="w-3.5 h-3.5" /> {cardBusy ? "Making test card..." : "Download test card"}
+        </button>
+        <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
+          Burn this small strip on a scrap of the same wood first, with the same laser settings. Rows 0 to 5 are each Burn spread level, with a crop of your photo and five grey steps. Pick the row that looks most like the photo and set Burn spread to that number.
+        </p>
+        {cardError && <p className="mt-1.5 text-[11px] text-red-400">{cardError}</p>}
+      </div>
+
       {/* Dots */}
       <div>
         <Label icon={Grip} text="Dot style" />
@@ -180,7 +262,7 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
       </div>
 
       <button
-        onClick={() => setEngrave({ ...DEFAULT_ENGRAVE, removeBackground: engrave.removeBackground, mainSubjectOnly: engrave.mainSubjectOnly, widthMm: engrave.widthMm, dpi: engrave.dpi, material: engrave.material, invert: mat.invert, dither: mat.dither })}
+        onClick={() => setEngrave({ ...DEFAULT_ENGRAVE, removeBackground: engrave.removeBackground, mainSubjectOnly: engrave.mainSubjectOnly, widthMm: engrave.widthMm, dpi: engrave.dpi, burnSpread: engrave.burnSpread, material: engrave.material, invert: mat.invert, dither: mat.dither })}
         disabled={disabled}
         className="w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:text-foreground disabled:opacity-40"
       >
