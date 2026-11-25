@@ -91,7 +91,7 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   removeBackground: false,
   mainSubjectOnly: true,
   cleanDots: true,
-  crispGraphics: true,
+  crispGraphics: false,
 };
 
 /** Biggest image we'll make, so the browser never stalls (about 600 mm at 254 DPI). */
@@ -488,11 +488,11 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   if (o.dither === "grayscale") {
     const out = new Uint8ClampedArray(n);
     for (let p = 0; p < n; p++) out[p] = v[p];
-    if (o.crispGraphics ?? true) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
+    if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
     return out;
   }
   const out = dither(v, W, H, o.dither);
   if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
-  if (o.crispGraphics ?? true) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
+  if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
   return out;
 }

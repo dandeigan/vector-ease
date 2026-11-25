@@ -156,9 +156,9 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
         <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
           <Type className="w-3.5 h-3.5 text-dd-gold-400" />
           Crisp text and logos
-          <Switch on={engrave.crispGraphics ?? true} onClick={() => setEngrave({ crispGraphics: !(engrave.crispGraphics ?? true) })} disabled={disabled} label="Crisp text and logos" />
+          <Switch on={engrave.crispGraphics ?? false} onClick={() => setEngrave({ crispGraphics: !(engrave.crispGraphics ?? false) })} disabled={disabled} label="Crisp text and logos" />
         </label>
-        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Burns lettering, signatures and logos solid with sharp edges, instead of as dots.</p>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Experimental, off by default. Burns sharp lettering and logos solid instead of as dots; can also harden parts of the photo.</p>
         <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
           <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
           Clean up lone dots
