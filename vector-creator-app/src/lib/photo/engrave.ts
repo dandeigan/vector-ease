@@ -582,6 +582,30 @@ function findPoster(gray: Float32Array, flatBlack: Float32Array, W: number, H: n
     const keep = (border && pix.length >= n * 0.002) || (rim > 0 && rimText >= rim * 0.7);
     if (keep) for (const p of pix) out[p] = 1;
   }
+  // Clean silhouette: the photo's edge carries a dark rim where it blended into
+  // the black background, which would burn as a heavy outline around the
+  // person. Let the background eat a few dots into that rim (only very dark
+  // pixels), then smooth the edge so it isn't stair-stepped.
+  const depth = Math.max(2, Math.round(Math.min(W, H) / 200));
+  let front: number[] = [];
+  for (let p = 0; p < n; p++) if (out[p] === 1) front.push(p);
+  for (let d = 0; d < depth; d++) {
+    const next: number[] = [];
+    for (const p of front) {
+      const x = p % W, y = (p / W) | 0;
+      const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
+      for (const q of nb) if (q >= 0 && out[q] === 0 && gray[q] <= 45) { out[q] = 1; next.push(q); }
+    }
+    front = next;
+  }
+  const bg = new Float32Array(n);
+  for (let p = 0; p < n; p++) if (out[p] === 1) bg[p] = 1;
+  const sm = boxBlur(bg, W, H, 1);
+  for (let p = 0; p < n; p++) {
+    if (out[p] === 2) continue;
+    if (out[p] === 1 && sm[p] < 0.5) out[p] = 0;
+    else if (out[p] === 0 && sm[p] >= 0.5 && gray[p] <= 80) out[p] = 1;
+  }
   return out;
 }
 
