@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles } from "lucide-react";
+import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles, Type } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { DEFAULT_ENGRAVE, DITHERS, DPI_CHOICES, MATERIALS, materialById, type MaterialId } from "@/lib/photo/engrave";
 import { removeBackground } from "@/lib/vectorizer/background-remove";
@@ -153,6 +153,12 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
           <Switch on={engrave.invert} onClick={() => setEngrave({ invert: !engrave.invert })} disabled={disabled} label="Flip light and dark" />
         </label>
         <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">On for slate and dark metal, where the laser makes light marks.</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
+          <Type className="w-3.5 h-3.5 text-dd-gold-400" />
+          Crisp text and logos
+          <Switch on={engrave.crispGraphics ?? true} onClick={() => setEngrave({ crispGraphics: !(engrave.crispGraphics ?? true) })} disabled={disabled} label="Crisp text and logos" />
+        </label>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Burns lettering, signatures and logos solid with sharp edges, instead of as dots.</p>
         <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
           <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
           Clean up lone dots

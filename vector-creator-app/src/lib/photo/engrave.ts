@@ -74,6 +74,8 @@ export interface EngraveOptions {
   mainSubjectOnly?: boolean;
   /** Remove lone single dots (they burn shallow and sand off unevenly). */
   cleanDots?: boolean;
+  /** Burn sharp text and logos solid instead of as dots. */
+  crispGraphics?: boolean;
 }
 
 export const DEFAULT_ENGRAVE: EngraveOptions = {
@@ -89,6 +91,7 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   removeBackground: false,
   mainSubjectOnly: true,
   cleanDots: true,
+  crispGraphics: true,
 };
 
 /** Biggest image we'll make, so the browser never stalls (about 600 mm at 254 DPI). */
@@ -360,6 +363,63 @@ export function cleanMask(alpha: Float32Array, gray: Float32Array, W: number, H:
 }
 
 /**
+ * Find text and logos: dark-on-light or light-on-dark shapes with hard edges
+ * (printed letters, a signature, sponsor logos). Those are better burned solid
+ * or left bare than shaded with dots, which makes their edges fuzzy and lets
+ * light specks show inside dark letters. Photo tones (skin, fabric, shadows)
+ * change gradually, so they are left to the dither.
+ *
+ * Returns, per pixel: 0 = photo, 1 = graphic to burn solid, 2 = graphic to leave bare.
+ */
+export function findGraphics(gray: Float32Array, W: number, H: number, dpi: number): Uint8Array {
+  const n = W * H;
+  const r = Math.max(2, Math.round((dpi / 254) * 3));
+  // Local min and max (separable sliding window).
+  const rowMin = new Float32Array(n), rowMax = new Float32Array(n);
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) {
+      let lo = 255, hi = 0;
+      const x0 = Math.max(0, x - r), x1 = Math.min(W - 1, x + r);
+      for (let xx = x0; xx <= x1; xx++) { const g = gray[row + xx]; if (g < lo) lo = g; if (g > hi) hi = g; }
+      rowMin[row + x] = lo;
+      rowMax[row + x] = hi;
+    }
+  }
+  const mean = boxBlur(gray, W, H, r);
+  const out = new Uint8Array(n);
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      let lo = 255, hi = 0;
+      const y0 = Math.max(0, y - r), y1 = Math.min(H - 1, y + r);
+      for (let yy = y0; yy <= y1; yy++) { const p = yy * W + x; if (rowMin[p] < lo) lo = rowMin[p]; if (rowMax[p] > hi) hi = rowMax[p]; }
+      const p = y * W + x;
+      // A hard edge nearby: near-black and near-white within a few dots.
+      if (lo > 70 || hi < 185 || hi - lo < 150) continue;
+      // Dark letters on a light ground (a logo on a helmet) often have grey
+      // glare on them: split high, so the glare still burns and the letters
+      // read solid. Light letters on a dark ground split near the middle, so
+      // they keep their full width.
+      const split = mean[p] > lo + (hi - lo) * 0.5 ? 0.8 : 0.5;
+      out[p] = gray[p] < lo + (hi - lo) * split ? 1 : 2;
+    }
+  }
+  return out;
+}
+
+/** Burn text and logos solid / leave them bare (see findGraphics). */
+function applyGraphics(out: Uint8ClampedArray, gray: Float32Array, alpha: Float32Array, W: number, H: number, o: EngraveOptions, flip?: Uint8Array) {
+  const g = findGraphics(gray, W, H, o.dpi);
+  for (let p = 0; p < W * H; p++) {
+    if (!g[p] || (flip && flip[p])) continue;
+    if (o.removeBackground && alpha[p] < 0.5) continue;
+    // 1 = dark in the photo. Dark burns, unless the material is flipped.
+    const burn = (g[p] === 1) !== o.invert;
+    out[p] = burn ? 0 : 255;
+  }
+}
+
+/**
  * Remove lone burn dots: a dot with no burned neighbour is a pin-prick that
  * burns shallow and sands away unevenly, leaving light areas looking dirty.
  */
@@ -428,9 +488,11 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   if (o.dither === "grayscale") {
     const out = new Uint8ClampedArray(n);
     for (let p = 0; p < n; p++) out[p] = v[p];
+    if (o.crispGraphics ?? true) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
     return out;
   }
   const out = dither(v, W, H, o.dither);
   if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
+  if (o.crispGraphics ?? true) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
   return out;
 }
