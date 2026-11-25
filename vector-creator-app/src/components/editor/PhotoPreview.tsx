@@ -28,8 +28,8 @@ function engraveInWorker(rgba: Uint8ClampedArray, w: number, h: number, opts: En
 const TOUCH_SIDE = 1200;
 type TouchTool = "darken" | "lighten" | "crisp" | "erase";
 const TOOLS: { id: TouchTool; label: string; icon: typeof Brush; tint: string; hint: string }[] = [
-  { id: "darken", label: "Darken", icon: Moon, tint: "59,130,246", hint: "Adds dots: deeper shadows, more definition" },
-  { id: "lighten", label: "Lighten", icon: Sun, tint: "250,204,21", hint: "Removes dots: brighter spots" },
+  { id: "darken", label: "Darken", icon: Moon, tint: "59,130,246", hint: "Deepens mid-tones, keeps highlights bright" },
+  { id: "lighten", label: "Lighten", icon: Sun, tint: "250,204,21", hint: "Lifts mid-tones, keeps pupils, lashes and darkest areas dark" },
   { id: "crisp", label: "Sharpen logo", icon: Type, tint: "236,72,153", hint: "Burns lettering and logos solid with clean edges" },
   { id: "erase", label: "Erase", icon: Eraser, tint: "0,0,0", hint: "Removes touch-ups" },
 ];

@@ -491,10 +491,13 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     for (let p = 0; p < n; p++) {
       const d = touch[p] / 255, l = touch[n + p] / 255;
       if (!d && !l) continue;
-      let x = vt[p];
-      if (d) x = x * (1 - 0.6 * d);
-      if (l) x = x + (255 - x) * 0.6 * l;
-      vt[p] = x;
+      // A curve, like a photo editor's: Darken deepens the mid-tones but keeps
+      // highlights (eye glints) bright; Lighten lifts the mid-tones but keeps
+      // the darkest darks (pupils, lashes, brows) dark. Flat areas barely move.
+      let x = Math.max(0, Math.min(255, vt[p])) / 255;
+      if (d) x = Math.pow(x, 1 + 0.8 * d);
+      if (l) x = Math.pow(x, 1 / (1 + 0.8 * l));
+      vt[p] = x * 255;
     }
   }
 
