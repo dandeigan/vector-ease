@@ -9,6 +9,7 @@ import {
 import { StudioEngine, type EngineState, type ShapeKind } from "@/lib/studio/engine";
 import { importLac } from "@/lib/studio/import-lac";
 import { importSvg } from "@/lib/studio/import-svg";
+import { importImage } from "@/lib/studio/import-image";
 import { importDxf } from "@/lib/studio/import-dxf";
 import { takePendingStudioFiles, type StudioHandoffMeta } from "@/lib/studio/handoff";
 import { newLayerId } from "@/lib/studio/layers";
@@ -36,7 +37,7 @@ const DEFAULT_TEXT: StudioTextSettings = {
   letterSpacing: 0,
 };
 
-const OPEN_ACCEPT = ".lac,.svg,.dxf,image/svg+xml,image/vnd.dxf,application/dxf";
+const OPEN_ACCEPT = ".lac,.svg,.dxf,image/svg+xml,image/vnd.dxf,application/dxf,.jpg,.jpeg,.png,.webp,.heic,image/jpeg,image/png,image/webp,image/heic";
 
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "design";
@@ -119,11 +120,9 @@ export default function Studio() {
         if (ext === "lac") design = await importLac(file, name);
         else if (ext === "svg" || file.type === "image/svg+xml") design = await importSvg(file, name);
         else if (ext === "dxf") design = await importDxf(file, name);
-        else if (file.type.startsWith("image/")) {
-          toast("warn", `To turn a photo into a vector, use Convert first. Opening photos straight in the Studio is coming in the next update.`);
-          continue;
-        } else {
-          toast("error", `"${name}" isn't a file type the Studio can open yet. Right now it opens Bambu .lac, .svg and .dxf files.`);
+        else if (file.type.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "heic"].includes(ext ?? "")) design = await importImage(file, name);
+        else {
+          toast("error", `"${name}" isn't a file type the Studio can open yet. It opens Bambu .lac, .svg, .dxf and photos (JPG, PNG, WebP).`);
           continue;
         }
         if (meta?.layerColors) applyLayerColors(design, meta.layerColors);
@@ -271,7 +270,7 @@ export default function Studio() {
             <button onClick={newProject} className="btn-ghost" title="New design">
               <FilePlus className="w-4 h-4" /> <span className="hidden md:inline">New</span>
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg or .dxf (⌘O)">
+            <button onClick={() => fileInputRef.current?.click()} className="btn-ghost" title="Open .lac, .svg, .dxf or a photo (⌘O)">
               <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
             </button>
             <button onClick={exportSvg} className="btn-export" title="Export SVG for LightBurn, xTool, Glowforge… (⌘S)">
@@ -336,7 +335,7 @@ export default function Studio() {
                   <FolderOpen className="w-6 h-6" />
                 </div>
                 <h2 className="text-lg font-bold mb-1">Start a design</h2>
-                <p className="text-sm text-foreground-muted mb-5">Drop a Bambu <b>.lac</b>, <b>.svg</b> or <b>.dxf</b> file anywhere here, or start from scratch.</p>
+                <p className="text-sm text-foreground-muted mb-5">Drop a Bambu <b>.lac</b>, <b>.svg</b>, <b>.dxf</b> or a photo anywhere here, or start from scratch.</p>
                 <div className="flex gap-2 justify-center">
                   <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-dd-gold-500 to-dd-gold-400 text-[#080B12]">Open a file</button>
                   <button onClick={addText} className="px-4 py-2 rounded-lg text-sm font-medium border border-border hover:border-dd-gold-400/40">Add text</button>
