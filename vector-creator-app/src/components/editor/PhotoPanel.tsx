@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info } from "lucide-react";
+import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { DEFAULT_ENGRAVE, DITHERS, DPI_CHOICES, MATERIALS, materialById, type MaterialId } from "@/lib/photo/engrave";
 import { removeBackground } from "@/lib/vectorizer/background-remove";
@@ -52,6 +52,31 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
         </p>
         {bgBusy && <div className="mt-2 h-1 rounded-full bg-border overflow-hidden"><div className="h-full w-1/3 bg-dd-gold-400 animate-pulse" /></div>}
         {bgError && <p className="mt-2 text-[11px] text-red-400">{bgError}</p>}
+        {engrave.removeBackground && (
+          <div className="mt-3">
+            <div className="text-[11px] font-semibold text-foreground mb-1.5">Keep</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { main: true, label: "Main subject" },
+                { main: false, label: "Everything it found" },
+              ].map((k) => (
+                <button
+                  key={k.label}
+                  onClick={() => setEngrave({ mainSubjectOnly: k.main })}
+                  disabled={disabled}
+                  className={`py-1.5 px-1 rounded-lg text-[11px] font-medium border transition-all disabled:opacity-40 ${
+                    (engrave.mainSubjectOnly ?? true) === k.main ? "border-dd-gold-400/50 bg-dd-gold-400/10 text-dd-gold-400" : "border-border text-foreground-muted hover:bg-card-hover"
+                  }`}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
+              Main subject keeps only the biggest thing (the person or pet). Everything also keeps other objects, like a car. White text on a dark background has nothing to burn once the background is gone; leave Remove background off to keep it.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Material */}
@@ -128,10 +153,16 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
           <Switch on={engrave.invert} onClick={() => setEngrave({ invert: !engrave.invert })} disabled={disabled} label="Flip light and dark" />
         </label>
         <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">On for slate and dark metal, where the laser makes light marks.</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
+          <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
+          Clean up lone dots
+          <Switch on={engrave.cleanDots ?? true} onClick={() => setEngrave({ cleanDots: !(engrave.cleanDots ?? true) })} disabled={disabled} label="Clean up lone dots" />
+        </label>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Removes single stray dots in light areas. They burn shallow and sand off unevenly, so light areas stay clean.</p>
       </div>
 
       <button
-        onClick={() => setEngrave({ ...DEFAULT_ENGRAVE, removeBackground: engrave.removeBackground, widthMm: engrave.widthMm, dpi: engrave.dpi, material: engrave.material, invert: mat.invert, dither: mat.dither })}
+        onClick={() => setEngrave({ ...DEFAULT_ENGRAVE, removeBackground: engrave.removeBackground, mainSubjectOnly: engrave.mainSubjectOnly, widthMm: engrave.widthMm, dpi: engrave.dpi, material: engrave.material, invert: mat.invert, dither: mat.dither })}
         disabled={disabled}
         className="w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-border text-foreground-muted hover:text-foreground disabled:opacity-40"
       >

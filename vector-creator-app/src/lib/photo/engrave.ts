@@ -70,6 +70,10 @@ export interface EngraveOptions {
   detail: number;
   dither: DitherId;
   removeBackground: boolean;
+  /** With the background removed: keep only the main subject (drops text, logos, half-found objects). */
+  mainSubjectOnly?: boolean;
+  /** Remove lone single dots (they burn shallow and sand off unevenly). */
+  cleanDots?: boolean;
 }
 
 export const DEFAULT_ENGRAVE: EngraveOptions = {
@@ -83,6 +87,8 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   detail: 50,
   dither: "jarvis",
   removeBackground: false,
+  mainSubjectOnly: true,
+  cleanDots: true,
 };
 
 /** Biggest image we'll make, so the browser never stalls (about 600 mm at 254 DPI). */
@@ -236,13 +242,125 @@ function dither(v: Float32Array, W: number, H: number, id: Exclude<DitherId, "gr
 }
 
 /**
+ * Firm up the AI cut-out. The model gives soft, half-sure edges, and anything
+ * it is half-sure about (a faded car, white text on black) would dither into
+ * faint ghost dots. Here every pixel is either fully kept or fully dropped,
+ * the edge is pulled in one dot so no dark background fringe is left, and
+ * optionally only the main subject (the biggest piece) is kept.
+ */
+export function cleanMask(alpha: Float32Array, W: number, H: number, mainOnly: boolean): Float32Array {
+  const n = W * H;
+  const m = new Uint8Array(n);
+  for (let p = 0; p < n; p++) m[p] = alpha[p] >= 0.5 ? 1 : 0;
+
+  // Pull the edge in one dot (removes the dark halo around kept pieces).
+  const er = new Uint8Array(n);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y * W + x;
+    if (!m[p]) continue;
+    if (x > 0 && !m[p - 1]) continue;
+    if (x < W - 1 && !m[p + 1]) continue;
+    if (y > 0 && !m[p - W]) continue;
+    if (y < H - 1 && !m[p + W]) continue;
+    er[p] = 1;
+  }
+
+  if (mainOnly) {
+    // Label pieces (8-connected), keep the biggest and any piece at least 40% its size.
+    const label = new Int32Array(n);
+    const sizes: number[] = [0];
+    const stack = new Int32Array(n);
+    for (let s = 0; s < n; s++) {
+      if (!er[s] || label[s]) continue;
+      const id = sizes.length;
+      let top = 0, size = 0;
+      stack[top++] = s;
+      label[s] = id;
+      while (top) {
+        const p = stack[--top];
+        size++;
+        const x = p % W, y = (p / W) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const q = yy * W + xx;
+          if (er[q] && !label[q]) { label[q] = id; stack[top++] = q; }
+        }
+      }
+      sizes.push(size);
+    }
+    const biggest = Math.max(0, ...sizes);
+    for (let p = 0; p < n; p++) if (er[p] && sizes[label[p]] < biggest * 0.4) er[p] = 0;
+    // Fill holes inside the subject (gaps the model missed) so they don't go blank.
+    const outside = new Uint8Array(n);
+    let top = 0;
+    const push = (q: number) => { if (!er[q] && !outside[q]) { outside[q] = 1; stack[top++] = q; } };
+    for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+    for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+    while (top) {
+      const p = stack[--top];
+      const x = p % W, y = (p / W) | 0;
+      if (x > 0) push(p - 1);
+      if (x < W - 1) push(p + 1);
+      if (y > 0) push(p - W);
+      if (y < H - 1) push(p + W);
+    }
+    // Only small holes are filled; big enclosed gaps (between an arm and the body) stay open.
+    const holeLabel = new Int32Array(n);
+    const holeSizes: number[] = [0];
+    for (let s = 0; s < n; s++) {
+      if (er[s] || outside[s] || holeLabel[s]) continue;
+      const id = holeSizes.length;
+      let t = 0, size = 0;
+      stack[t++] = s;
+      holeLabel[s] = id;
+      while (t) {
+        const p = stack[--t];
+        size++;
+        const x = p % W, y = (p / W) | 0;
+        const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
+        for (const q of nb) if (q >= 0 && !er[q] && !outside[q] && !holeLabel[q]) { holeLabel[q] = id; stack[t++] = q; }
+      }
+      holeSizes.push(size);
+    }
+    const maxHole = n * 0.002;
+    for (let p = 0; p < n; p++) if (holeLabel[p] && holeSizes[holeLabel[p]] <= maxHole) er[p] = 1;
+  }
+
+  const out = new Float32Array(n);
+  for (let p = 0; p < n; p++) out[p] = er[p];
+  return out;
+}
+
+/**
+ * Remove lone burn dots: a dot with no burned neighbour is a pin-prick that
+ * burns shallow and sands away unevenly, leaving light areas looking dirty.
+ */
+function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
+  const src = px.slice();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y * W + x;
+    if (src[p] !== 0) continue;
+    let burnt = 0;
+    for (let dy = -1; dy <= 1 && !burnt; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      if (src[yy * W + xx] === 0) { burnt = 1; break; }
+    }
+    if (!burnt) px[p] = 255;
+  }
+}
+
+/**
  * The full photo-engrave pipeline. `rgba` must already be at the engraving's
  * pixel size (see targetSize); its alpha is the subject mask when the
  * background was removed.
  */
 export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H: number, o: EngraveOptions): Uint8ClampedArray {
   const n = W * H;
-  const { gray, alpha } = toGray(rgba, n);
+  const { gray, alpha: rawAlpha } = toGray(rgba, n);
+  const alpha = o.removeBackground ? cleanMask(rawAlpha, W, H, o.mainSubjectOnly ?? true) : rawAlpha;
   const mat = materialById(o.material);
 
   // 1. Local contrast.
@@ -280,5 +398,7 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     for (let p = 0; p < n; p++) out[p] = v[p];
     return out;
   }
-  return dither(v, W, H, o.dither);
+  const out = dither(v, W, H, o.dither);
+  if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
+  return out;
 }

@@ -177,6 +177,13 @@ export default function PhotoPreview() {
       <div ref={boxRef} className={`flex-1 min-h-0 relative bg-background/40 ${zoom ? "overflow-auto" : "overflow-hidden flex items-center justify-center"}`}>
         {error && <p className="absolute top-3 left-3 right-3 z-10 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>}
         {!photoOutput && !error && <p className="text-sm text-foreground-muted">Making your engraving...</p>}
+        {photoOutput && !zoom && (
+          <p className="absolute bottom-2 left-3 right-3 text-center text-[10px] text-foreground-muted pointer-events-none">
+            {laserView
+              ? "Black = laser burns. White = laser stays off."
+              : `Preview on ${materialById(engrave.material).label.toLowerCase()}. The plain colour is the bare material, which the laser never touches. Only the dots burn.`}
+          </p>
+        )}
         <canvas
           ref={canvasRef}
           className={`${photoOutput ? "" : "hidden"} ${zoom ? "max-w-none" : "shadow-xl rounded-sm"}`}
