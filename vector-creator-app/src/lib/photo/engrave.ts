@@ -515,7 +515,7 @@ function findPoster(gray: Float32Array, flatBlack: Float32Array, W: number, H: n
   const n = W * H;
   const out = new Uint8Array(n);
   const cand = new Uint8Array(n);
-  for (let p = 0; p < n; p++) if (gray[p] <= 30 && flatBlack[p] >= 0.6) cand[p] = 1;
+  for (let p = 0; p < n; p++) if (gray[p] <= 10 && flatBlack[p] >= 0.6) cand[p] = 1;
   const seen = new Uint8Array(n);
   const stack = new Int32Array(n);
   const comp: number[] = [];
@@ -554,7 +554,7 @@ function findPoster(gray: Float32Array, flatBlack: Float32Array, W: number, H: n
   const isText = new Float32Array(n);
   for (let p = 0; p < n; p++) if (out[p] === 2) isText[p] = 1;
   const nearText = boxBlur(isText, W, H, Math.max(3, Math.round(Math.min(W, H) / 100)));
-  for (let p = 0; p < n; p++) if (gray[p] <= 30 && nearText[p] > 0.01) cand[p] = 1;
+  for (let p = 0; p < n; p++) if (gray[p] <= 30 && nearText[p] > 0.01) cand[p] = 1; // letter rims are cleaner, a bit looser is fine
   // Background pieces: black areas that reach the edge of the picture, or that
   // sit inside lettering (the hole of an "o", a signature loop). Black areas
   // enclosed by the photo itself (a helmet visor, a dark car part) stay burned.
@@ -594,17 +594,23 @@ function findPoster(gray: Float32Array, flatBlack: Float32Array, W: number, H: n
     for (const p of front) {
       const x = p % W, y = (p / W) | 0;
       const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
-      for (const q of nb) if (q >= 0 && out[q] === 0 && gray[q] <= 45) { out[q] = 1; next.push(q); }
+      for (const q of nb) if (q >= 0 && out[q] === 0 && gray[q] <= 20) { out[q] = 1; next.push(q); }
     }
     front = next;
   }
+  // Right around the lettering everything is either letter or background: no
+  // in-between pixels left to dither into specks or nibbled edges.
+  // Decided on a lightly smoothed copy so JPEG ripples don't nibble the edges.
+  const tight = boxBlur(isText, W, H, 2);
+  const g3 = boxBlur(gray, W, H, 1);
+  for (let p = 0; p < n; p++) if (tight[p] > 0.01) out[p] = g3[p] >= 110 ? 2 : 1;
   const bg = new Float32Array(n);
   for (let p = 0; p < n; p++) if (out[p] === 1) bg[p] = 1;
   const sm = boxBlur(bg, W, H, 1);
   for (let p = 0; p < n; p++) {
     if (out[p] === 2) continue;
     if (out[p] === 1 && sm[p] < 0.5) out[p] = 0;
-    else if (out[p] === 0 && sm[p] >= 0.5 && gray[p] <= 80) out[p] = 1;
+    else if (out[p] === 0 && sm[p] >= 0.5 && gray[p] <= 20) out[p] = 1;
   }
   return out;
 }
@@ -627,7 +633,7 @@ function crispPosterText(out: Uint8ClampedArray, gray: Float32Array, alpha: Floa
     const light = gray[p] >= 128;
     if (flip && flip[p]) { out[p] = light ? 0 : 255; continue; }
     if (alpha[p] < 1) continue;
-    if (poster && poster[p]) { out[p] = light !== o.invert ? 0 : 255; continue; }
+    if (poster && poster[p]) { out[p] = (poster[p] === 2) !== o.invert ? 0 : 255; continue; }
     out[p] = light !== o.invert ? 255 : 0;
   }
 }
@@ -667,6 +673,14 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   }
   // Invert background: 1 = poster background (left bare), 2 = lettering (burned dark).
   const poster = invBg && flatBlack ? findPoster(gray, flatBlack, W, H) : null;
+  // Where the photo meets the now-bare background, fade it out over a few dots
+  // (like a vignette) so hair and shoulders don't end in a hard, cut-out line.
+  let fade: Float32Array | null = null;
+  if (poster) {
+    const bgm = new Float32Array(n);
+    for (let p = 0; p < n; p++) if (poster[p] === 1) bgm[p] = 1;
+    fade = boxBlur(bgm, W, H, Math.max(2, Math.round((o.dpi / 254) * 3)));
+  }
   for (let p = 0; p < n; p++) {
     let x = (v[p] - 128) * k + 128 + b;
     x = Math.max(0, Math.min(255, x));
@@ -680,7 +694,8 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // Same on every material: the letters get the laser mark, the rest stays bare.
     if (cut && cut.flip[p]) x = gray[p] >= 247 ? 0 : gray[p] <= 8 ? 255 : 255 - gray[p];
     else if (poster && poster[p] === 1) x = o.invert ? 0 : 255;
-    else if (poster && poster[p] === 2) x = (gray[p] >= 128) !== o.invert ? 0 : 255;
+    else if (poster && poster[p] === 2) x = o.invert ? 255 : 0;
+    else if (fade && fade[p] > 0) { const bare = o.invert ? 0 : 255; x = x + (bare - x) * Math.min(1, fade[p] * 1.5); }
     // Areas that are black in the photo itself stay solid. Without this, local
     // contrast blows up tiny JPEG noise in a black poster background into a
     // scatter of stray dots that stops where the noise stops.
