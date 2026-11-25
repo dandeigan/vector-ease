@@ -502,6 +502,28 @@ function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
  * pixel size (see targetSize); its alpha is the subject mask when the
  * background was removed.
  */
+/**
+ * Lettering printed on a black poster background: the soft grey rim of each
+ * letter would dither into ragged speckle. Where a small window holds only
+ * black and white (few in-between greys) and sits beside a large black area,
+ * the letter edge is cut clean at half-grey instead of dithered. Faces and
+ * hair have plenty of in-between greys, so they never qualify.
+ */
+function crispPosterText(out: Uint8ClampedArray, gray: Float32Array, alpha: Float32Array, flatBlack: Float32Array, flip: Uint8Array | null, W: number, H: number, o: EngraveOptions) {
+  const n = W * H;
+  const lo = new Float32Array(n), hi = new Float32Array(n);
+  for (let p = 0; p < n; p++) { if (gray[p] <= 40) lo[p] = 1; else if (gray[p] >= 200) hi[p] = 1; }
+  const r = Math.max(2, Math.round((o.dpi / 254) * 3));
+  const loS = boxBlur(lo, W, H, r), hiS = boxBlur(hi, W, H, r);
+  for (let p = 0; p < n; p++) {
+    if (flatBlack[p] < 0.3 || loS[p] < 0.05 || hiS[p] < 0.05 || 1 - loS[p] - hiS[p] > 0.3) continue;
+    const light = gray[p] >= 128;
+    if (flip && flip[p]) { out[p] = light ? 0 : 255; continue; }
+    if (alpha[p] < 1) continue;
+    out[p] = light !== o.invert ? 255 : 0;
+  }
+}
+
 export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H: number, o: EngraveOptions, touch?: Uint8ClampedArray | null): Uint8ClampedArray {
   const n = W * H;
   const { gray, alpha: rawAlpha } = toGray(rgba, n);
@@ -584,6 +606,7 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
       if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
     }
     if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
+    if (flatBlack) crispPosterText(out, gray, alpha, flatBlack, cut?.flip ?? null, W, H, o);
     return out;
   };
   const out = finish(v);
