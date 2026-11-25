@@ -74,6 +74,8 @@ export interface EngraveOptions {
   mainSubjectOnly?: boolean;
   /** Remove lone single dots (they burn shallow and sand off unevenly). */
   cleanDots?: boolean;
+  /** Black areas of the photo (poster backgrounds) burn solid, no stray dots. Default on. */
+  solidBlacks?: boolean;
   /** Burn sharp text and logos solid instead of as dots. */
   crispGraphics?: boolean;
 }
@@ -91,6 +93,7 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   removeBackground: false,
   mainSubjectOnly: true,
   cleanDots: true,
+  solidBlacks: true,
   crispGraphics: false,
 };
 
@@ -259,8 +262,22 @@ function dither(v: Float32Array, W: number, H: number, id: Exclude<DitherId, "gr
  */
 export function cleanMask(alpha: Float32Array, gray: Float32Array, W: number, H: number, mainOnly: boolean): { alpha: Float32Array; flip: Uint8Array } {
   const n = W * H;
-  const m = new Uint8Array(n);
-  for (let p = 0; p < n; p++) m[p] = alpha[p] >= 0.5 ? 1 : 0;
+  // Sure pixels (>= 50%) seed the cut; it then grows into half-sure pixels
+  // (>= 20%) that touch it, so a shoulder the model is unsure of stays whole
+  // instead of breaking into blotches.
+  const grown = new Uint8Array(n);
+  {
+    const st = new Int32Array(n);
+    let t = 0;
+    for (let p = 0; p < n; p++) if (alpha[p] >= 0.5) { grown[p] = 1; st[t++] = p; }
+    while (t) {
+      const p = st[--t];
+      const x = p % W, y = (p / W) | 0;
+      const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
+      for (const q of nb) if (q >= 0 && !grown[q] && alpha[q] >= 0.2) { grown[q] = 1; st[t++] = q; }
+    }
+  }
+  const m = grown;
 
   // Label pieces (8-connected) and measure how light each one is.
   const label = new Int32Array(n);
@@ -307,6 +324,47 @@ export function cleanMask(alpha: Float32Array, gray: Float32Array, W: number, H:
     const f = fate[label[p]];
     if (f === 1) keep[p] = 1;
     else if (f === 2) flip[p] = 1;
+  }
+
+  // White text and logos printed on a black background, found from the photo
+  // itself. The AI cut often fades out over a thin letter ("I") or misses the
+  // dot of an "i"; any light shape fully ringed by black is burned dark too.
+  if (!mainOnly) {
+    const seen = new Uint8Array(n);
+    const comp: number[] = [];
+    for (let s = 0; s < n; s++) {
+      if (seen[s] || keep[s] || gray[s] <= 128) continue;
+      comp.length = 0;
+      let t = 0, edge = 0, darkEdge = 0, touchesKeep = false;
+      stack[t++] = s; seen[s] = 1;
+      while (t) {
+        const p = stack[--t];
+        comp.push(p);
+        const x = p % W, y = (p / W) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) { edge++; continue; }
+          const q = yy * W + xx;
+          if (keep[q]) touchesKeep = true;
+          if (gray[q] > 128) { if (!seen[q] && !keep[q]) { seen[q] = 1; stack[t++] = q; } }
+          else { edge++; if (gray[q] <= 110) darkEdge++; }
+        }
+      }
+      if (touchesKeep || comp.length < 3 || comp.length > n * 0.02) continue;
+      // The letter's soft edge: ring of mid-grey pixels next to it.
+      if (darkEdge < edge * 0.6) continue;
+      for (const p of comp) {
+        flip[p] = 1;
+        const x = p % W, y = (p / W) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const q = yy * W + xx;
+          if (!keep[q] && gray[q] > 40) flip[q] = 1;
+        }
+      }
+    }
   }
 
   // Pull the edge of engraved pieces in one dot (removes the dark halo).
@@ -466,6 +524,16 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   const k = o.contrast >= 0 ? 1 + o.contrast / 25 : 1 + o.contrast / 60;
   const b = o.brightness * 2;
   const gamma = mat.gamma;
+  // Big solid-black areas of the photo (poster backgrounds): share of nearby
+  // pixels that are black. Black pixels in a mostly-black area burn solid;
+  // shadows inside a face or car are too broken up to qualify.
+  let flatBlack: Float32Array | null = null;
+  if (o.solidBlacks ?? true) {
+    const isBlack = new Float32Array(n);
+    let any = false;
+    for (let p = 0; p < n; p++) if (gray[p] <= 10 && alpha[p] >= 1) { isBlack[p] = 1; any = true; }
+    if (any) flatBlack = boxBlur(isBlack, W, H, Math.max(4, Math.round((o.dpi / 254) * 10)));
+  }
   for (let p = 0; p < n; p++) {
     let x = (v[p] - 128) * k + 128 + b;
     x = Math.max(0, Math.min(255, x));
@@ -478,6 +546,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // from the photo (crisp letters, no local-contrast or sharpening halos).
     // Same on every material: the letters get the laser mark, the rest stays bare.
     if (cut && cut.flip[p]) x = gray[p] >= 247 ? 0 : gray[p] <= 8 ? 255 : 255 - gray[p];
+    // Areas that are black in the photo itself stay solid. Without this, local
+    // contrast blows up tiny JPEG noise in a black poster background into a
+    // scatter of stray dots that stops where the noise stops.
+    else if (flatBlack && gray[p] <= 10 && flatBlack[p] >= 0.6) x = o.invert ? 255 : 0;
     // Snap near-white / near-black so highlights and shadows don't get stray dots.
     if (x >= 247) x = 255;
     else if (x <= 6) x = 0;

@@ -165,6 +165,12 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
           <Switch on={engrave.cleanDots ?? true} onClick={() => setEngrave({ cleanDots: !(engrave.cleanDots ?? true) })} disabled={disabled} label="Clean up lone dots" />
         </label>
         <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Removes single stray dots in light areas. They burn shallow and sand off unevenly, so light areas stay clean.</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
+          <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
+          Solid black backgrounds
+          <Switch on={engrave.solidBlacks ?? true} onClick={() => setEngrave({ solidBlacks: !(engrave.solidBlacks ?? true) })} disabled={disabled} label="Solid black backgrounds" />
+        </label>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Black areas of the photo burn as one even fill instead of a scatter of light dots. Turn off to keep faint texture in dark backgrounds.</p>
       </div>
 
       <button
