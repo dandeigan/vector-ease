@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { isStudioFile, setPendingStudioFiles } from "@/lib/studio/handoff";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
-import { detectImageColors, type DetectedColor } from "@/lib/vectorizer/color-detect";
+import { detectImageColors, looksLikeDrawing, type DetectedColor } from "@/lib/vectorizer/color-detect";
 import { removeBackground } from "@/lib/vectorizer/background-remove";
 import { useAuth } from "@/components/auth/AuthContext";
 import { logVectorization } from "@/lib/firebase/users";
@@ -20,8 +20,9 @@ export default function Workspace() {
     isProcessing, setIsProcessing,
     loadingMessage, setLoadingMessage,
     resultSvg, setResultSvg,
-    options, setOptions,
+    setOptions,
     openRequest, clearRequest,
+    setLooksLikeDrawing, traceError, setTraceError,
   } = useEditorStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -54,6 +55,9 @@ export default function Workspace() {
       if (event.target?.result) {
         const imgUrl = event.target.result as string;
         setOriginalImage(imgUrl);
+        setTraceError(null);
+        setLooksLikeDrawing(false);
+        looksLikeDrawing(imgUrl).then(setLooksLikeDrawing);
         setResultSvg(null);
         setDisplaySvg(null);
         setShowDetection(true);
@@ -113,9 +117,11 @@ export default function Workspace() {
     setIsProcessing(true);
     setShowDetection(false);
     setLoadingMessage("Vectorizing layers...");
+    setTraceError(null);
 
     try {
-      const svg = await traceImageToSVG(imgUrl, options);
+      // Read options from the store, not this render: a button may have changed them just now.
+      const svg = await traceImageToSVG(imgUrl, useEditorStore.getState().options);
       setResultSvg(svg);
       setDisplaySvg(svg);
       if (user?.uid) {
@@ -123,6 +129,7 @@ export default function Workspace() {
       }
     } catch (error) {
       console.error("Tracing failed:", error);
+      setTraceError(error instanceof Error ? error.message : "Vectorizing failed. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -209,6 +216,13 @@ export default function Workspace() {
           accept="image/png, image/jpeg, image/webp, .lac, .svg, .dxf"
           onChange={(e) => { handleFileUpload(e); e.target.value = ""; }}
         />
+        {traceError && !isProcessing && (
+          <div role="alert" className="absolute top-3 left-3 right-3 z-40 flex items-start gap-2 rounded-lg border border-red-400/40 bg-red-500/10 backdrop-blur px-3 py-2 text-xs text-red-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+            <span className="flex-1">{traceError}</span>
+            <button onClick={() => setTraceError(null)} className="text-red-300/70 hover:text-red-200" aria-label="Dismiss">✕</button>
+          </div>
+        )}
         {/* Processing overlay */}
         {isProcessing && (
           <div className="absolute inset-0 bg-background/85 backdrop-blur-sm z-50 flex flex-col items-center justify-center">

@@ -1,95 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { vectorize, type Config } from "@neplex/vectorizer";
-// Use numeric values directly — const enums can't be accessed with isolatedModules
-const ColorMode_Color = 0;
-const Hierarchical_Stacked = 0;
-const PathSimplifyMode_Polygon = 1;
-const PathSimplifyMode_Spline = 2;
 import sharp from "sharp";
+import { gzipSync } from "zlib";
 import { getVerifiedUid } from "@/lib/firebase/verify-token";
 import { buildPalette, type Rgb } from "@/lib/vectorizer/palette";
-import { prepareLineArt, stripPaper } from "@/lib/vectorizer/line-art";
+import { prepareLineArt, PAPER_HEX } from "@/lib/vectorizer/line-art";
+import { quantizeCrisp, traceScale, upscaleForTrace } from "@/lib/vectorizer/quantize";
+import { traceByLayer } from "@/lib/vectorizer/layer-trace";
 
-const hexToRgb2 = (h: string): Rgb => ({ r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) });
+/** Big images can take a few seconds to trace. */
+export const maxDuration = 60;
 
-/** Snap every fill to the nearest colour in the palette (VTracer blends colours slightly). */
-function snapFills(svg: string, palette: Rgb[]): string {
-  return svg.replace(/fill="#([0-9a-fA-F]{6})"/g, (_full, hex) => {
-    const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
-    let best = palette[0], bd = Infinity;
-    for (const pc of palette) {
-      const d = (r - pc.r) ** 2 + (g - pc.g) ** 2 + (b - pc.b) ** 2;
-      if (d < bd) { bd = d; best = pc; }
-    }
-    return `fill="#${[best.r, best.g, best.b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}"`;
-  });
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, "0")).join("").toUpperCase();
-}
+/** Vercel refuses function responses over 4.5 MB, so stay under it. */
+const MAX_RESPONSE_BYTES = 4_000_000;
 
 /**
- * Pre-process: snap every pixel in the image to the nearest palette color.
- * Eliminates anti-aliasing, JPEG artifacts, and gradient transitions.
- * VTracer then gets a clean flat-color image to trace.
+ * Image → layered SVG (one fill colour per laser layer).
+ * 1. Enlarge up to 2x so small details survive (quantize.ts).
+ * 2. Split into the palette's colours without halo rings (quantize.ts), or
+ *    ink vs paper in line-art mode (line-art.ts).
+ * 3. Trace each colour on its own and bake coordinates back to the original
+ *    image size (layer-trace.ts).
  */
-async function quantizeImageToPalette(
-  imageBuffer: Buffer<ArrayBuffer>,
-  palette: { r: number; g: number; b: number }[]
-): Promise<Buffer<ArrayBuffer>> {
-  const image = sharp(imageBuffer);
-  const metadata = await image.metadata();
-  const width = metadata.width!;
-  const height = metadata.height!;
-
-  // Get raw pixel data (RGBA)
-  const { data, info } = await image
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const pixels = new Uint8Array(data);
-
-  // Snap each pixel to nearest palette color
-  for (let i = 0; i < pixels.length; i += 4) {
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    const a = pixels[i + 3];
-
-    if (a < 128) continue; // Skip transparent
-
-    let minDist = Infinity;
-    let bestR = r, bestG = g, bestB = b;
-
-    for (const pc of palette) {
-      const dist = (r - pc.r) ** 2 + (g - pc.g) ** 2 + (b - pc.b) ** 2;
-      if (dist < minDist) {
-        minDist = dist;
-        bestR = pc.r;
-        bestG = pc.g;
-        bestB = pc.b;
-      }
-    }
-
-    pixels[i] = bestR;
-    pixels[i + 1] = bestG;
-    pixels[i + 2] = bestB;
-  }
-
-  // Convert back to PNG
-  return sharp(Buffer.from(pixels) as Buffer<ArrayBuffer>, {
-    raw: { width: info.width, height: info.height, channels: 4 },
-  })
-    .png()
-    .toBuffer() as Promise<Buffer<ArrayBuffer>>;
-}
-
 export async function POST(req: NextRequest) {
   // Only signed-in users may use the vectorizer (it costs server CPU).
   const uid = await getVerifiedUid(req);
@@ -105,75 +36,60 @@ export async function POST(req: NextRequest) {
     }
 
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-    let imageBuffer: Buffer<ArrayBuffer> = Buffer.from(base64Data, "base64") as Buffer<ArrayBuffer>;
-
-    // Line-art mode: ink vs paper by brightness, paper dropped, fine detail kept.
-    if (lineArt) {
-      const { png, inkHexes } = await prepareLineArt(imageBuffer, { tones: Number(inkTones) || 1, sensitivity: Number(inkSensitivity ?? 50) });
-      let svg = await vectorize(png as Buffer<ArrayBuffer>, {
-        colorMode: ColorMode_Color,
-        hierarchical: 1,      // Cutout: each ink shape stands alone, so the paper can be removed.
-        filterSpeckle: 2,     // Keep small strokes (cloud edges, hatching, dots).
-        colorPrecision: 8,    // Colours are already exact.
-        layerDifference: 1,
-        mode: smoothness === 0 ? PathSimplifyMode_Polygon : PathSimplifyMode_Spline,
-        cornerThreshold: 60,
-        lengthThreshold: 3.5,
-        maxIterations: 10,
-        spliceThreshold: 45,
-        pathPrecision: 3,
-      });
-      svg = stripPaper(snapFills(svg, ["FFFFFF", ...inkHexes].map(hexToRgb2)));
-      svg = svg.replace(
-        /(<svg[^>]*?)width="(\d+)"([^>]*?)height="(\d+)"/,
-        (_, pre, w, mid, h) => `${pre}viewBox="0 0 ${w} ${h}"${mid}width="100%" height="100%"`
-      );
-      return NextResponse.json({ svg });
-    }
+    const imageBuffer: Buffer<ArrayBuffer> = Buffer.from(base64Data, "base64") as Buffer<ArrayBuffer>;
 
     const targetLayers = Math.min(16, Math.max(2, Math.round(Number(numberOfColors) || 7)));
+    // Pick the palette (colour mode). Use the auto-detected colours only when they
+    // match the layer count asked for; otherwise build exactly that many from the image.
+    let palette: Rgb[] = [];
+    if (!lineArt) {
+      palette =
+        Array.isArray(detectedPalette) && detectedPalette.length === targetLayers
+          ? detectedPalette
+          : await buildPalette(imageBuffer, targetLayers);
+      if (!palette.length) palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }];
+      palette = palette.map((c) => ({ r: Math.round(c.r), g: Math.round(c.g), b: Math.round(c.b) }));
+    }
 
-    // Step 1: Pick the palette. Use the auto-detected colours only when they match
-    // the layer count asked for; otherwise build exactly that many from the image.
-    // Always quantize, so the result never has more colours than the slider says.
-    let palette: Rgb[] =
-      Array.isArray(detectedPalette) && detectedPalette.length === targetLayers
-        ? detectedPalette
-        : await buildPalette(imageBuffer, targetLayers);
-    if (!palette.length) palette = [{ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 }];
-    imageBuffer = await quantizeImageToPalette(imageBuffer, palette);
-
-    // Step 2: Run VTracer on the clean, flat-color image
-    // Low precision + high layer difference since image is already quantized
-    const config: Config = {
-      colorMode: ColorMode_Color,
-      hierarchical: 1, // Cutout mode — each shape is self-contained, no stacking dependency
-      filterSpeckle: 8,
-      colorPrecision: 3,        // Low — image already has exact colors from quantization
-      layerDifference: 25,      // Higher — merge any VTracer artifacts aggressively
-      mode: smoothness === 0 ? PathSimplifyMode_Polygon : PathSimplifyMode_Spline,
-      cornerThreshold: 60,
-      lengthThreshold: 4.0,
-      maxIterations: 10,
-      spliceThreshold: 45,
-      pathPrecision: 3,
+    const trace = async (scale: number): Promise<string> => {
+      const big = await upscaleForTrace(imageBuffer, scale);
+      // Specks smaller than ~2 original pixels across are dropped (JPEG noise).
+      const opts = { speckle: Math.max(2, Math.round(2 * scale)), smoothness: smoothness === 0 ? 0 : 1, lengthThreshold: 4, scale };
+      if (lineArt) {
+        // Line art: ink vs paper by brightness, paper dropped, fine detail kept.
+        const { png } = await prepareLineArt(big, { tones: Number(inkTones) || 1, sensitivity: Number(inkSensitivity ?? 50) });
+        return traceByLayer(png, { ...opts, skip: [PAPER_HEX] });
+      }
+      // Flat colours with no in-between rings, then one clean trace per layer.
+      return traceByLayer(await quantizeCrisp(big, palette, scale), opts);
     };
 
-    let svg = await vectorize(imageBuffer, config);
+    // Trace bigger than the original so dots, thin strokes and curves stay crisp.
+    const meta = await sharp(imageBuffer).metadata();
+    const scale = traceScale(meta.width ?? 1000, meta.height ?? 1000);
+    let json = JSON.stringify({ svg: await trace(scale) });
+    // Normal results go back as plain JSON (Vercel compresses them on the way).
+    if (json.length <= MAX_RESPONSE_BYTES) return new Response(json, { headers: { "Content-Type": "application/json" } });
 
-    // Step 3: Snap all SVG fill colors to the nearest palette color
-    // VTracer may produce slight color variations even from a quantized image
-    svg = snapFills(svg, palette);
-
-    // Step 4: Make SVG scalable
-    svg = svg.replace(
-      /(<svg[^>]*?)width="(\d+)"([^>]*?)height="(\d+)"/,
-      (_, pre, w, mid, h) => `${pre}viewBox="0 0 ${w} ${h}"${mid}width="100%" height="100%"`
-    );
-
-    return NextResponse.json({ svg });
-  } catch (err: any) {
+    // Very detailed images at many layers outgrow Vercel's response limit, so
+    // send those pre-compressed. Still too big: try again at the original size,
+    // then explain what to change.
+    let body = gzipSync(json);
+    if (body.length > MAX_RESPONSE_BYTES && scale > 1) {
+      json = JSON.stringify({ svg: await trace(1) });
+      body = gzipSync(json);
+    }
+    if (body.length > MAX_RESPONSE_BYTES) {
+      return NextResponse.json(
+        { error: lineArt
+            ? "This drawing has too much fine detail to send back in one file. Try 1 ink layer, or move Faint lines toward Fewer."
+            : `This image has too much fine detail for ${targetLayers} layers. Try fewer layers, or Line art for drawings and sketches.` },
+        { status: 413 },
+      );
+    }
+    return new Response(body, { headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" } });
+  } catch (err) {
     console.error("Vectorization failed:", err);
-    return NextResponse.json({ error: err.message || "Vectorization failed" }, { status: 500 });
+    return NextResponse.json({ error: (err instanceof Error && err.message) || "Vectorization failed" }, { status: 500 });
   }
 }

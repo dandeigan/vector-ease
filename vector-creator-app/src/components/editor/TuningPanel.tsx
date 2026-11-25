@@ -15,7 +15,7 @@ interface TuningPanelProps {
 }
 
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
-  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, hiddenLayers, setHiddenLayers } = useEditorStore();
+  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, hiddenLayers, setHiddenLayers, looksLikeDrawing } = useEditorStore();
 
   /**
    * One-click presets for common input types.
@@ -142,6 +142,21 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           <p className="text-[10px] text-foreground-muted mt-2 leading-relaxed">
             Pick a starting point, then fine-tune below if needed.
           </p>
+          {looksLikeDrawing && !options.lineArt && (
+            <div className="mt-3 rounded-lg border border-dd-gold-400/40 bg-dd-gold-400/[0.06] p-3">
+              <p className="text-xs text-foreground leading-relaxed">
+                <PenTool className="inline w-3.5 h-3.5 text-dd-gold-400 mr-1 -mt-0.5" />
+                This looks like a drawing. Line art keeps every line crisp and drops the paper.
+              </p>
+              <button
+                onClick={() => { applyPreset("lineart"); onTraceTrigger(); }}
+                disabled={disabled}
+                className="mt-2 w-full py-1.5 rounded-md text-xs font-semibold bg-dd-gold-400 text-[#080B12] hover:bg-dd-gold-300 disabled:opacity-40"
+              >
+                Use Line art
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Line art mode */}

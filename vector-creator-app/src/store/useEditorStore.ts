@@ -80,6 +80,14 @@ interface EditorState {
   clearRequest: number;
   requestClear: () => void;
 
+  // Set on upload: the image looks like a drawing (Convert suggests Line art).
+  looksLikeDrawing: boolean;
+  setLooksLikeDrawing: (v: boolean) => void;
+
+  // Last vectorize failure, shown over the preview. Cleared on the next try.
+  traceError: string | null;
+  setTraceError: (msg: string | null) => void;
+
   // Global actions
   resetWorkspace: () => void;
 }
@@ -127,7 +135,14 @@ export const useEditorStore = create<EditorState>((set) => ({
   clearRequest: 0,
   requestClear: () => set((st) => ({ clearRequest: st.clearRequest + 1 })),
 
+  looksLikeDrawing: false,
+  setLooksLikeDrawing: (v) => set({ looksLikeDrawing: v }),
+  traceError: null,
+  setTraceError: (msg) => set({ traceError: msg }),
+
   resetWorkspace: () => set({
+    looksLikeDrawing: false,
+    traceError: null,
     originalImage: null,
     resultSvg: null,
     isProcessing: false,

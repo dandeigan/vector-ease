@@ -10,6 +10,37 @@ export interface DetectedColor {
 }
 
 /**
+ * True when the image looks like a drawing or sketch: almost no colour, and
+ * mostly light paper. Convert uses it to suggest Line art mode.
+ */
+export async function looksLikeDrawing(imageUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(160 / img.width, 160 / img.height, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(false);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let total = 0, grey = 0, light = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 128) continue;
+        total++;
+        const max = Math.max(d[i], d[i + 1], d[i + 2]), min = Math.min(d[i], d[i + 1], d[i + 2]);
+        if (max - min < 40) grey++;
+        if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] > 185) light++;
+      }
+      resolve(total > 0 && grey / total > 0.92 && light / total > 0.3);
+    };
+    img.onerror = () => resolve(false);
+    img.src = imageUrl;
+  });
+}
+
+/**
  * Analyzes an image and detects dominant distinct colors.
  * Uses canvas pixel sampling + clustering to find real colors,
  * ignoring anti-aliasing and compression artifacts.
