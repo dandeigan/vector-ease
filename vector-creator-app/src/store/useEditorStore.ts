@@ -112,6 +112,12 @@ interface EditorState {
   // The finished Photo engrave: one byte per laser dot, 0 = burn.
   photoOutput: { pixels: Uint8ClampedArray; w: number; h: number; dpi: number; widthMm: number } | null;
   setPhotoOutput: (o: EditorState["photoOutput"]) => void;
+  // Photo engrave touch-up brush: painted masks (alpha) for darken / lighten / sharpen logo,
+  // tied to the image they were painted on. touchVersion bumps after each stroke.
+  touchLayers: { forImage: string; darken: HTMLCanvasElement; lighten: HTMLCanvasElement; crisp: HTMLCanvasElement } | null;
+  setTouchLayers: (t: EditorState["touchLayers"]) => void;
+  touchVersion: number;
+  bumpTouch: () => void;
 
   // Global actions
   resetWorkspace: () => void;
@@ -186,6 +192,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCutoutImage: (url) => set({ cutoutImage: url }),
   photoOutput: null,
   setPhotoOutput: (o) => set({ photoOutput: o }),
+  touchLayers: null,
+  setTouchLayers: (t) => set({ touchLayers: t }),
+  touchVersion: 0,
+  bumpTouch: () => set((st) => ({ touchVersion: st.touchVersion + 1 })),
 
   resetWorkspace: () => set({
     convertMode: "vector",
@@ -196,6 +206,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     engrave: DEFAULT_ENGRAVE,
     cutoutImage: null,
     photoOutput: null,
+    touchLayers: null,
     looksLikeDrawing: false,
     traceError: null,
     originalImage: null,

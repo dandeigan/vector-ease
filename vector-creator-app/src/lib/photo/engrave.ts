@@ -444,7 +444,7 @@ function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
  * pixel size (see targetSize); its alpha is the subject mask when the
  * background was removed.
  */
-export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H: number, o: EngraveOptions): Uint8ClampedArray {
+export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H: number, o: EngraveOptions, touch?: Uint8ClampedArray | null): Uint8ClampedArray {
   const n = W * H;
   const { gray, alpha: rawAlpha } = toGray(rgba, n);
   const cut = o.removeBackground ? cleanMask(rawAlpha, gray, W, H, o.mainSubjectOnly ?? true) : null;
@@ -484,15 +484,66 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     v[p] = x;
   }
 
+  const hasTouch = !!touch && touch.length === n * 3 && touch.some((t) => t > 0);
+  // Touch-ups: a copy of the tones with the brushed spots darkened / lightened.
+  const vt = hasTouch ? v.slice() : null;
+  if (vt && touch) {
+    for (let p = 0; p < n; p++) {
+      const d = touch[p] / 255, l = touch[n + p] / 255;
+      if (!d && !l) continue;
+      let x = vt[p];
+      if (d) x = x * (1 - 0.6 * d);
+      if (l) x = x + (255 - x) * 0.6 * l;
+      vt[p] = x;
+    }
+  }
+
   // 5. Dots.
-  if (o.dither === "grayscale") {
-    const out = new Uint8ClampedArray(n);
-    for (let p = 0; p < n; p++) out[p] = v[p];
+  const finish = (tones: Float32Array) => {
+    let out: Uint8ClampedArray;
+    if (o.dither === "grayscale") {
+      out = new Uint8ClampedArray(n);
+      for (let p = 0; p < n; p++) out[p] = tones[p];
+    } else {
+      out = dither(tones.slice(), W, H, o.dither);
+      if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
+    }
     if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
     return out;
-  }
-  const out = dither(v, W, H, o.dither);
-  if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
-  if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
+  };
+  const out = finish(v);
+  if (!vt || !touch) return out;
+
+  // The touched version is used ONLY where the user painted, so the rest of
+  // the engraving stays dot-for-dot identical (dither ripples can't leak out).
+  const touched = finish(vt);
+  for (let p = 0; p < n; p++) if (touch[p] || touch[n + p] || touch[2 * n + p]) out[p] = touched[p];
+  sharpenLogos(out, gray, alpha, W, H, o, touch.subarray(2 * n));
   return out;
+}
+
+/**
+ * The "Sharpen logo" brush: inside the painted spot, every dot is decided by
+ * comparing it with its immediate surroundings, so lettering and logos burn
+ * solid with clean edges, and grey glare on dark letters still burns. Flat
+ * areas inside the spot (plain suit, plain helmet) keep their normal dots.
+ */
+function sharpenLogos(out: Uint8ClampedArray, gray: Float32Array, alpha: Float32Array, W: number, H: number, o: EngraveOptions, mask: Uint8ClampedArray) {
+  const r = Math.max(3, Math.round((o.dpi / 254) * 4));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y * W + x;
+    if (mask[p] < 80) continue;
+    if (o.removeBackground && alpha[p] < 0.5) continue;
+    let sum = 0, cnt = 0, lo = 255, hi = 0;
+    const x0 = Math.max(0, x - r), x1 = Math.min(W - 1, x + r), y0 = Math.max(0, y - r), y1 = Math.min(H - 1, y + r);
+    for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
+      const g = gray[yy * W + xx];
+      sum += g; cnt++;
+      if (g < lo) lo = g;
+      if (g > hi) hi = g;
+    }
+    if (hi - lo < 40) continue; // flat: keep the normal dots
+    const dark = gray[p] < sum / cnt - 4;
+    out[p] = dark !== o.invert ? 0 : 255;
+  }
 }
