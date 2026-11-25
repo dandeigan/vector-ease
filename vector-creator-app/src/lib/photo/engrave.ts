@@ -76,6 +76,8 @@ export interface EngraveOptions {
   cleanDots?: boolean;
   /** Black areas of the photo (poster backgrounds) burn solid, no stray dots. Default on. */
   solidBlacks?: boolean;
+  /** Black poster background stays bare and white lettering burns dark; the photo is unchanged. Default off. */
+  invertBackground?: boolean;
   /** Burn sharp text and logos solid instead of as dots. */
   crispGraphics?: boolean;
 }
@@ -94,6 +96,7 @@ export const DEFAULT_ENGRAVE: EngraveOptions = {
   mainSubjectOnly: true,
   cleanDots: true,
   solidBlacks: true,
+  invertBackground: false,
   crispGraphics: false,
 };
 
@@ -503,13 +506,93 @@ function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
  * background was removed.
  */
 /**
+ * For "Invert background": find the black poster background and the white
+ * lettering on it, straight from the photo. Background = near-black pixels in
+ * a mostly-black area. Lettering = light shapes ringed by that background,
+ * plus their soft grey rim. Everything else (the photo) is left alone.
+ */
+function findPoster(gray: Float32Array, flatBlack: Float32Array, W: number, H: number): Uint8Array {
+  const n = W * H;
+  const out = new Uint8Array(n);
+  const cand = new Uint8Array(n);
+  for (let p = 0; p < n; p++) if (gray[p] <= 30 && flatBlack[p] >= 0.6) cand[p] = 1;
+  const seen = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  const comp: number[] = [];
+  for (let s = 0; s < n; s++) {
+    if (seen[s] || gray[s] <= 128) continue;
+    comp.length = 0;
+    let t = 0, edge = 0, bgEdge = 0;
+    stack[t++] = s; seen[s] = 1;
+    while (t) {
+      const p = stack[--t];
+      comp.push(p);
+      const x = p % W, y = (p / W) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) { edge++; continue; }
+        const q = yy * W + xx;
+        if (gray[q] > 128) { if (!seen[q]) { seen[q] = 1; stack[t++] = q; } }
+        else { edge++; if (gray[q] <= 110 && flatBlack[q] >= 0.3) bgEdge++; }
+      }
+    }
+    if (comp.length < 3 || comp.length > n * 0.02 || bgEdge < edge * 0.6) continue;
+    for (const p of comp) {
+      out[p] = 2;
+      const x = p % W, y = (p / W) | 0;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const q = yy * W + xx;
+        if (out[q] !== 2 && gray[q] > 30 && gray[q] <= 128) out[q] = 2;
+      }
+    }
+  }
+  // Black right next to lettering (between letters, inside an "o") counts too,
+  // even though the letters make that spot less than mostly-black.
+  const isText = new Float32Array(n);
+  for (let p = 0; p < n; p++) if (out[p] === 2) isText[p] = 1;
+  const nearText = boxBlur(isText, W, H, Math.max(3, Math.round(Math.min(W, H) / 100)));
+  for (let p = 0; p < n; p++) if (gray[p] <= 30 && nearText[p] > 0.01) cand[p] = 1;
+  // Background pieces: black areas that reach the edge of the picture, or that
+  // sit inside lettering (the hole of an "o", a signature loop). Black areas
+  // enclosed by the photo itself (a helmet visor, a dark car part) stay burned.
+  const lab = new Int32Array(n);
+  let id = 0;
+  const pix: number[] = [];
+  for (let s = 0; s < n; s++) {
+    if (!cand[s] || lab[s] || out[s] === 2) continue;
+    id++;
+    pix.length = 0;
+    let t = 0, border = false, rim = 0, rimText = 0;
+    stack[t++] = s; lab[s] = id;
+    while (t) {
+      const p = stack[--t];
+      pix.push(p);
+      const x = p % W, y = (p / W) | 0;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) border = true;
+      const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
+      for (const q of nb) {
+        if (q < 0) continue;
+        if (cand[q] && out[q] !== 2) { if (!lab[q]) { lab[q] = id; stack[t++] = q; } }
+        else { rim++; if (out[q] === 2) rimText++; }
+      }
+    }
+    const keep = (border && pix.length >= n * 0.002) || (rim > 0 && rimText >= rim * 0.7);
+    if (keep) for (const p of pix) out[p] = 1;
+  }
+  return out;
+}
+
+/**
  * Lettering printed on a black poster background: the soft grey rim of each
  * letter would dither into ragged speckle. Where a small window holds only
  * black and white (few in-between greys) and sits beside a large black area,
  * the letter edge is cut clean at half-grey instead of dithered. Faces and
  * hair have plenty of in-between greys, so they never qualify.
  */
-function crispPosterText(out: Uint8ClampedArray, gray: Float32Array, alpha: Float32Array, flatBlack: Float32Array, flip: Uint8Array | null, W: number, H: number, o: EngraveOptions) {
+function crispPosterText(out: Uint8ClampedArray, gray: Float32Array, alpha: Float32Array, flatBlack: Float32Array, flip: Uint8Array | null, W: number, H: number, o: EngraveOptions, poster: Uint8Array | null = null) {
   const n = W * H;
   const lo = new Float32Array(n), hi = new Float32Array(n);
   for (let p = 0; p < n; p++) { if (gray[p] <= 40) lo[p] = 1; else if (gray[p] >= 200) hi[p] = 1; }
@@ -520,6 +603,7 @@ function crispPosterText(out: Uint8ClampedArray, gray: Float32Array, alpha: Floa
     const light = gray[p] >= 128;
     if (flip && flip[p]) { out[p] = light ? 0 : 255; continue; }
     if (alpha[p] < 1) continue;
+    if (poster && poster[p]) { out[p] = light !== o.invert ? 0 : 255; continue; }
     out[p] = light !== o.invert ? 255 : 0;
   }
 }
@@ -550,12 +634,15 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   // pixels that are black. Black pixels in a mostly-black area burn solid;
   // shadows inside a face or car are too broken up to qualify.
   let flatBlack: Float32Array | null = null;
-  if (o.solidBlacks ?? true) {
+  const invBg = !!o.invertBackground && !cut;
+  if ((o.solidBlacks ?? true) || invBg) {
     const isBlack = new Float32Array(n);
     let any = false;
     for (let p = 0; p < n; p++) if (gray[p] <= 10 && alpha[p] >= 1) { isBlack[p] = 1; any = true; }
     if (any) flatBlack = boxBlur(isBlack, W, H, Math.max(4, Math.round((o.dpi / 254) * 10)));
   }
+  // Invert background: 1 = poster background (left bare), 2 = lettering (burned dark).
+  const poster = invBg && flatBlack ? findPoster(gray, flatBlack, W, H) : null;
   for (let p = 0; p < n; p++) {
     let x = (v[p] - 128) * k + 128 + b;
     x = Math.max(0, Math.min(255, x));
@@ -568,6 +655,8 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // from the photo (crisp letters, no local-contrast or sharpening halos).
     // Same on every material: the letters get the laser mark, the rest stays bare.
     if (cut && cut.flip[p]) x = gray[p] >= 247 ? 0 : gray[p] <= 8 ? 255 : 255 - gray[p];
+    else if (poster && poster[p] === 1) x = o.invert ? 0 : 255;
+    else if (poster && poster[p] === 2) x = (gray[p] >= 128) !== o.invert ? 0 : 255;
     // Areas that are black in the photo itself stay solid. Without this, local
     // contrast blows up tiny JPEG noise in a black poster background into a
     // scatter of stray dots that stops where the noise stops.
@@ -606,7 +695,7 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
       if (o.cleanDots ?? true) cleanLoneDots(out, W, H);
     }
     if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
-    if (flatBlack) crispPosterText(out, gray, alpha, flatBlack, cut?.flip ?? null, W, H, o);
+    if (flatBlack) crispPosterText(out, gray, alpha, flatBlack, cut?.flip ?? null, W, H, o, poster);
     return out;
   };
   const out = finish(v);

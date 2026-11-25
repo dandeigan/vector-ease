@@ -171,6 +171,12 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
           <Switch on={engrave.solidBlacks ?? true} onClick={() => setEngrave({ solidBlacks: !(engrave.solidBlacks ?? true) })} disabled={disabled} label="Solid black backgrounds" />
         </label>
         <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">Black areas of the photo burn as one even fill instead of a scatter of light dots. Turn off to keep faint texture in dark backgrounds.</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-foreground-muted">
+          <Contrast className="w-3.5 h-3.5 text-dd-gold-400" />
+          Invert background
+          <Switch on={!!engrave.invertBackground} onClick={() => setEngrave({ invertBackground: !engrave.invertBackground })} disabled={disabled || engrave.removeBackground} label="Invert background" />
+        </label>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">{engrave.removeBackground ? "Turn off Remove background to use this." : "For quote posters on a plain black background: the background stays bare wood, the white lettering burns dark, and the photo stays as it is. Faster to burn too."}</p>
       </div>
 
       <button
