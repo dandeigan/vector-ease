@@ -9,6 +9,7 @@ import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
 import { detectImageColors, classifyImage, type DetectedColor } from "@/lib/vectorizer/color-detect";
 import PhotoPreview from "./PhotoPreview";
+import StencilPreview from "./StencilPreview";
 import { removeBackground } from "@/lib/vectorizer/background-remove";
 import { useAuth } from "@/components/auth/AuthContext";
 import { logVectorization } from "@/lib/firebase/users";
@@ -50,6 +51,7 @@ export default function Workspace() {
     setDetectedColors([]);
     setCutoutImage(null);
     setPhotoOutput(null);
+    useEditorStore.getState().setStencilFlat(null);
     setLooksLikePhoto(false);
     setLooksLikeDrawing(false);
     setConvertMode("vector");
@@ -66,6 +68,7 @@ export default function Workspace() {
         setDisplaySvg(null);
         setCutoutImage(null);
         setPhotoOutput(null);
+        useEditorStore.getState().setStencilFlat(null);
         // Real photos go straight to Photo engrave; drawings get a Line art suggestion.
         const kind = await classifyImage(imgUrl);
         setLooksLikeDrawing(kind.drawing);
@@ -134,6 +137,7 @@ export default function Workspace() {
     try {
       // Read options from the store, not this render: a button may have changed them just now.
       const svg = await traceImageToSVG(imgUrl, useEditorStore.getState().options);
+      useEditorStore.getState().setResultFrom("vector");
       setResultSvg(svg);
       setDisplaySvg(svg);
       if (user?.uid) {
@@ -306,6 +310,8 @@ export default function Workspace() {
           </div>
         ) : convertMode === "photo" ? (
           <PhotoPreview />
+        ) : convertMode === "stencil" ? (
+          <StencilPreview svg={resultSvg ? svgToShow : null} />
         ) : (
           /* ── Preview ── */
           <div className="flex-1 flex flex-col min-h-0">

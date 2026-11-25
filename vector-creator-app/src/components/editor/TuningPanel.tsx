@@ -1,8 +1,9 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Play, Wand2, Layers, Spline, Eye, EyeOff, Sparkles, AlertTriangle, PenTool, Camera, Shapes } from "lucide-react";
+import { Play, Wand2, Layers, Spline, Eye, EyeOff, Sparkles, AlertTriangle, PenTool, Camera, Shapes, Stamp } from "lucide-react";
 import PhotoPanel from "./PhotoPanel";
+import StencilPanel from "./StencilPanel";
 import { useEffect, useMemo } from "react";
 import { defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { colorName, filterSvg, parseLayers } from "@/lib/vectorizer/svg-layers";
@@ -88,17 +89,18 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
   // Vector layers or Photo engrave: two ways to turn an image into a laser job.
   const modeTabs = (
     <div className="px-5 pt-4">
-      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-background/60 border border-border" role="tablist">
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-background/60 border border-border" role="tablist">
         {([
-          ["vector", Shapes, "Vector layers"],
+          ["vector", Shapes, "Vector"],
           ["photo", Camera, "Photo engrave"],
+          ["stencil", Stamp, "Stencil"],
         ] as const).map(([id, Icon, label]) => (
           <button
             key={id}
             role="tab"
             aria-selected={convertMode === id}
             onClick={() => setConvertMode(id)}
-            className={`py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-1 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-all ${
               convertMode === id ? "bg-dd-gold-400 text-[#080B12] shadow" : "text-foreground-muted hover:text-foreground"
             }`}
           >
@@ -109,10 +111,21 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
       <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
         {convertMode === "photo"
           ? "Photos engrave as fine dots, like a printed photo. Best for faces, pets and scenery."
-          : "Cut, score and fill shapes. Best for logos, text, drawings and stencils."}
+          : convertMode === "stencil"
+            ? "Bold 1 to 3 tone shapes with bridges, street-art style. Cut it as a stencil or engrave the look."
+            : "Cut, score and fill shapes. Best for logos, text and drawings."}
       </p>
     </div>
   );
+
+  if (convertMode === "stencil") {
+    return (
+      <div className="rounded-2xl border border-border bg-card flex flex-col">
+        {modeTabs}
+        <StencilPanel disabled={disabled} />
+      </div>
+    );
+  }
 
   if (convertMode === "photo") {
     return (

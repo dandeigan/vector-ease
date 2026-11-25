@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { imageBase64, numberOfColors, smoothness, detectedPalette, lineArt, inkTones, inkSensitivity } = await req.json();
+    const { imageBase64, numberOfColors, smoothness, detectedPalette, lineArt, inkTones, inkSensitivity, skipWhite } = await req.json();
 
     if (!imageBase64) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
@@ -61,7 +61,8 @@ export async function POST(req: NextRequest) {
         return traceByLayer(png, { ...opts, skip: [PAPER_HEX] });
       }
       // Flat colours with no in-between rings, then one clean trace per layer.
-      return traceByLayer(await quantizeCrisp(big, palette, scale), opts);
+      // Stencils: the white paper is left out of the file.
+      return traceByLayer(await quantizeCrisp(big, palette, scale), skipWhite ? { ...opts, skip: [PAPER_HEX] } : opts);
     };
 
     // Trace bigger than the original so dots, thin strokes and curves stay crisp.

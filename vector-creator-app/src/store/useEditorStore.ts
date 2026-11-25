@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { DEFAULT_ENGRAVE, type EngraveOptions } from "@/lib/photo/engrave";
+import { DEFAULT_STENCIL, type StencilOptions } from "@/lib/photo/stencil";
 
 export interface PaletteColor {
   r: number;
@@ -90,8 +91,16 @@ interface EditorState {
   setTraceError: (msg: string | null) => void;
 
   // Convert makes either vector layers or a Photo engrave (laser-ready dotted image).
-  convertMode: "vector" | "photo";
-  setConvertMode: (m: "vector" | "photo") => void;
+  convertMode: "vector" | "photo" | "stencil";
+  setConvertMode: (m: "vector" | "photo" | "stencil") => void;
+  // Which mode made resultSvg (a vector trace and a stencil share the exports).
+  resultFrom: "vector" | "stencil";
+  setResultFrom: (m: "vector" | "stencil") => void;
+  stencil: StencilOptions;
+  setStencil: (patch: Partial<StencilOptions>) => void;
+  // The flat stencil image (PNG data URL) that gets vectorized.
+  stencilFlat: string | null;
+  setStencilFlat: (url: string | null) => void;
   // Set on upload: the image looks like a real photo (Convert suggests Photo engrave).
   looksLikePhoto: boolean;
   setLooksLikePhoto: (v: boolean) => void;
@@ -157,7 +166,18 @@ export const useEditorStore = create<EditorState>((set) => ({
   setTraceError: (msg) => set({ traceError: msg }),
 
   convertMode: "vector",
-  setConvertMode: (m) => set({ convertMode: m }),
+  // Switching between Vector and Stencil drops the other one's result, so the
+  // preview and exports always match the tab you're on.
+  setConvertMode: (m) => set((st) => ({
+    convertMode: m,
+    resultSvg: m === "photo" || st.resultFrom === m ? st.resultSvg : null,
+  })),
+  resultFrom: "vector",
+  setResultFrom: (m) => set({ resultFrom: m }),
+  stencil: DEFAULT_STENCIL,
+  setStencil: (patch) => set((st) => ({ stencil: { ...st.stencil, ...patch } })),
+  stencilFlat: null,
+  setStencilFlat: (url) => set({ stencilFlat: url }),
   looksLikePhoto: false,
   setLooksLikePhoto: (v) => set({ looksLikePhoto: v }),
   engrave: DEFAULT_ENGRAVE,
@@ -169,6 +189,9 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   resetWorkspace: () => set({
     convertMode: "vector",
+    resultFrom: "vector",
+    stencil: DEFAULT_STENCIL,
+    stencilFlat: null,
     looksLikePhoto: false,
     engrave: DEFAULT_ENGRAVE,
     cutoutImage: null,
