@@ -73,7 +73,7 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
               ))}
             </div>
             <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
-              Main subject keeps only the biggest thing (the person or pet). Everything also keeps other objects, like a car. White text on a dark background has nothing to burn once the background is gone; leave Remove background off to keep it.
+              Main subject keeps only the person or pet. Everything also keeps other objects, and burns white text and logos dark so they show on bare wood. For dark posters with white text, leave Remove background off: the burned background makes the white parts stand out.
             </p>
           </div>
         )}

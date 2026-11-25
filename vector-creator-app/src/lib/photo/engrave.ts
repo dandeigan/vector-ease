@@ -243,93 +243,120 @@ function dither(v: Float32Array, W: number, H: number, id: Exclude<DitherId, "gr
 
 /**
  * Firm up the AI cut-out. The model gives soft, half-sure edges, and anything
- * it is half-sure about (a faded car, white text on black) would dither into
- * faint ghost dots. Here every pixel is either fully kept or fully dropped,
- * the edge is pulled in one dot so no dark background fringe is left, and
- * optionally only the main subject (the biggest piece) is kept.
+ * it is half-sure about would dither into faint ghost dots. Here every pixel
+ * is either fully kept or fully dropped, and the edge is pulled in one dot so
+ * no dark background fringe is left.
+ *
+ * Each kept piece is then sorted:
+ *   - the main subject (the biggest piece) engraves normally
+ *   - other objects (a car) engrave normally, unless "main subject only"
+ *   - white pieces (text, a signature, a logo printed white on a dark
+ *     background) would vanish on bare wood, so they are flagged to burn
+ *     dark instead ("flip"), unless "main subject only"
  */
-export function cleanMask(alpha: Float32Array, W: number, H: number, mainOnly: boolean): Float32Array {
+export function cleanMask(alpha: Float32Array, gray: Float32Array, W: number, H: number, mainOnly: boolean): { alpha: Float32Array; flip: Uint8Array } {
   const n = W * H;
   const m = new Uint8Array(n);
   for (let p = 0; p < n; p++) m[p] = alpha[p] >= 0.5 ? 1 : 0;
 
-  // Pull the edge in one dot (removes the dark halo around kept pieces).
+  // Label pieces (8-connected) and measure how light each one is.
+  const label = new Int32Array(n);
+  const stack = new Int32Array(n);
+  const sizes: number[] = [0];
+  const lightShare: number[] = [0];
+  for (let s = 0; s < n; s++) {
+    if (!m[s] || label[s]) continue;
+    const id = sizes.length;
+    let top = 0, size = 0, light = 0;
+    stack[top++] = s;
+    label[s] = id;
+    while (top) {
+      const p = stack[--top];
+      size++;
+      if (gray[p] > 170) light++;
+      const x = p % W, y = (p / W) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const q = yy * W + xx;
+        if (m[q] && !label[q]) { label[q] = id; stack[top++] = q; }
+      }
+    }
+    sizes.push(size);
+    lightShare.push(light / size);
+  }
+  let biggestId = 0;
+  for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[biggestId]) biggestId = i;
+  const biggest = sizes[biggestId] || 0;
+
+  // What happens to each piece: 0 drop, 1 engrave, 2 burn dark (white text / logo).
+  const fate = new Uint8Array(sizes.length);
+  for (let i = 1; i < sizes.length; i++) {
+    if (i === biggestId || sizes[i] >= biggest * 0.4) fate[i] = 1;
+    else if (mainOnly) fate[i] = 0;
+    else if (lightShare[i] > 0.6) fate[i] = sizes[i] >= 8 ? 2 : 0;
+    else fate[i] = sizes[i] >= n * 0.001 ? 1 : 0; // dark crumbs are dropped
+  }
+
+  const keep = new Uint8Array(n);
+  const flip = new Uint8Array(n);
+  for (let p = 0; p < n; p++) {
+    const f = fate[label[p]];
+    if (f === 1) keep[p] = 1;
+    else if (f === 2) flip[p] = 1;
+  }
+
+  // Pull the edge of engraved pieces in one dot (removes the dark halo).
   const er = new Uint8Array(n);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const p = y * W + x;
-    if (!m[p]) continue;
-    if (x > 0 && !m[p - 1]) continue;
-    if (x < W - 1 && !m[p + 1]) continue;
-    if (y > 0 && !m[p - W]) continue;
-    if (y < H - 1 && !m[p + W]) continue;
+    if (!keep[p]) continue;
+    if (x > 0 && !keep[p - 1]) continue;
+    if (x < W - 1 && !keep[p + 1]) continue;
+    if (y > 0 && !keep[p - W]) continue;
+    if (y < H - 1 && !keep[p + W]) continue;
     er[p] = 1;
   }
 
-  if (mainOnly) {
-    // Label pieces (8-connected), keep the biggest and any piece at least 40% its size.
-    const label = new Int32Array(n);
-    const sizes: number[] = [0];
-    const stack = new Int32Array(n);
-    for (let s = 0; s < n; s++) {
-      if (!er[s] || label[s]) continue;
-      const id = sizes.length;
-      let top = 0, size = 0;
-      stack[top++] = s;
-      label[s] = id;
-      while (top) {
-        const p = stack[--top];
-        size++;
-        const x = p % W, y = (p / W) | 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx, yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-          const q = yy * W + xx;
-          if (er[q] && !label[q]) { label[q] = id; stack[top++] = q; }
-        }
-      }
-      sizes.push(size);
-    }
-    const biggest = Math.max(0, ...sizes);
-    for (let p = 0; p < n; p++) if (er[p] && sizes[label[p]] < biggest * 0.4) er[p] = 0;
-    // Fill holes inside the subject (gaps the model missed) so they don't go blank.
-    const outside = new Uint8Array(n);
-    let top = 0;
-    const push = (q: number) => { if (!er[q] && !outside[q]) { outside[q] = 1; stack[top++] = q; } };
-    for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
-    for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
-    while (top) {
-      const p = stack[--top];
-      const x = p % W, y = (p / W) | 0;
-      if (x > 0) push(p - 1);
-      if (x < W - 1) push(p + 1);
-      if (y > 0) push(p - W);
-      if (y < H - 1) push(p + W);
-    }
-    // Only small holes are filled; big enclosed gaps (between an arm and the body) stay open.
-    const holeLabel = new Int32Array(n);
-    const holeSizes: number[] = [0];
-    for (let s = 0; s < n; s++) {
-      if (er[s] || outside[s] || holeLabel[s]) continue;
-      const id = holeSizes.length;
-      let t = 0, size = 0;
-      stack[t++] = s;
-      holeLabel[s] = id;
-      while (t) {
-        const p = stack[--t];
-        size++;
-        const x = p % W, y = (p / W) | 0;
-        const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
-        for (const q of nb) if (q >= 0 && !er[q] && !outside[q] && !holeLabel[q]) { holeLabel[q] = id; stack[t++] = q; }
-      }
-      holeSizes.push(size);
-    }
-    const maxHole = n * 0.002;
-    for (let p = 0; p < n; p++) if (holeLabel[p] && holeSizes[holeLabel[p]] <= maxHole) er[p] = 1;
+  // Fill small holes inside engraved pieces (gaps the model missed) so they don't go blank.
+  const outside = new Uint8Array(n);
+  let top = 0;
+  const push = (q: number) => { if (!er[q] && !outside[q]) { outside[q] = 1; stack[top++] = q; } };
+  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+  while (top) {
+    const p = stack[--top];
+    const x = p % W, y = (p / W) | 0;
+    if (x > 0) push(p - 1);
+    if (x < W - 1) push(p + 1);
+    if (y > 0) push(p - W);
+    if (y < H - 1) push(p + W);
   }
+  // Only small holes are filled; big enclosed gaps (between an arm and the body) stay open.
+  const holeLabel = new Int32Array(n);
+  const holeSizes: number[] = [0];
+  for (let s = 0; s < n; s++) {
+    if (er[s] || outside[s] || holeLabel[s]) continue;
+    const id = holeSizes.length;
+    let t = 0, size = 0;
+    stack[t++] = s;
+    holeLabel[s] = id;
+    while (t) {
+      const p = stack[--t];
+      size++;
+      const x = p % W, y = (p / W) | 0;
+      const nb = [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1];
+      for (const q of nb) if (q >= 0 && !er[q] && !outside[q] && !holeLabel[q]) { holeLabel[q] = id; stack[t++] = q; }
+    }
+    holeSizes.push(size);
+  }
+  const maxHole = n * 0.002;
+  // Only for the main subject on its own: elsewhere a "hole" may be the inside of a signature loop.
+  if (mainOnly) for (let p = 0; p < n; p++) if (holeLabel[p] && holeSizes[holeLabel[p]] <= maxHole) er[p] = 1;
 
   const out = new Float32Array(n);
   for (let p = 0; p < n; p++) out[p] = er[p];
-  return out;
+  return { alpha: out, flip };
 }
 
 /**
@@ -360,7 +387,8 @@ function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
 export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H: number, o: EngraveOptions): Uint8ClampedArray {
   const n = W * H;
   const { gray, alpha: rawAlpha } = toGray(rgba, n);
-  const alpha = o.removeBackground ? cleanMask(rawAlpha, W, H, o.mainSubjectOnly ?? true) : rawAlpha;
+  const cut = o.removeBackground ? cleanMask(rawAlpha, gray, W, H, o.mainSubjectOnly ?? true) : null;
+  const alpha = cut ? cut.alpha : rawAlpha;
   const mat = materialById(o.material);
 
   // 1. Local contrast.
@@ -386,6 +414,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // 4. Removed background: never burn.
     const a = o.removeBackground ? alpha[p] : 1;
     x = x * a + 255 * (1 - a);
+    // White text / logos with the background gone: burn them dark, straight
+    // from the photo (crisp letters, no local-contrast or sharpening halos).
+    // Same on every material: the letters get the laser mark, the rest stays bare.
+    if (cut && cut.flip[p]) x = gray[p] >= 247 ? 0 : gray[p] <= 8 ? 255 : 255 - gray[p];
     // Snap near-white / near-black so highlights and shadows don't get stray dots.
     if (x >= 247) x = 255;
     else if (x <= 6) x = 0;
