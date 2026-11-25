@@ -43,7 +43,7 @@ export const DITHERS: { id: DitherId; label: string; hint: string }[] = [
   { id: "jarvis", label: "Jarvis", hint: "Smooth, fine detail. Best all-rounder." },
   { id: "stucki", label: "Stucki", hint: "Crisp and clean, great on slate and metal." },
   { id: "floyd", label: "Floyd-Steinberg", hint: "Classic, slightly grainier." },
-  { id: "atkinson", label: "Atkinson", hint: "High contrast, punchy highlights." },
+  { id: "atkinson", label: "Atkinson", hint: "High contrast, punchy highlights. Soft dark areas turn solid." },
   { id: "grayscale", label: "Grayscale", hint: "No dots. For lasers that vary power by shade." },
 ];
 
