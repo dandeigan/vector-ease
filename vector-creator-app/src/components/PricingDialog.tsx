@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, Flame, X } from "lucide-react";
-import { PLANS, type PlanId } from "@/lib/pricing";
+import { LIFETIME_BADGE, PLANS, type PlanId } from "@/lib/pricing";
 import { startCheckout } from "@/lib/checkout-client";
 
 const INCLUDED = [
@@ -72,8 +72,8 @@ export default function PricingDialog({
                 className={`relative rounded-xl border p-5 flex flex-col ${best ? "border-dd-gold-400/60 bg-dd-gold-400/[0.06]" : "border-border bg-background/40"}`}
               >
                 {best && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-dd-gold-400 text-[#080B12]">
-                    Best value
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-dd-gold-400 text-[#080B12]">
+                    {LIFETIME_BADGE}
                   </span>
                 )}
                 <div className="text-sm font-semibold text-foreground-muted">{p.name}</div>

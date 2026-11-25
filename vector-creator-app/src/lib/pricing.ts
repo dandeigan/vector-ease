@@ -37,5 +37,11 @@ export const PLANS: Record<PlanId, Plan> = {
   },
 };
 
+/**
+ * Tag on the Lifetime card in the pricing popup. Matches the Cyber Monday
+ * sales page and ads (Dan, 2026-11-24). Set back to "Best value" after the promo.
+ */
+export const LIFETIME_BADGE = "Cyber Monday deal";
+
 /** Short line for banners and buttons. */
 export const PRICE_LINE = `$${PLANS.yearly.price}/year or $${PLANS.lifetime.price} lifetime`;
