@@ -13,6 +13,7 @@ import { setPendingStudioFiles } from "@/lib/studio/handoff";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 import { svgToLbrn2, defaultPresetForMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { colorName, parseLayers, stripHiddenLayers } from "@/lib/vectorizer/svg-layers";
+import { setPngDpi } from "@/lib/photo/png-dpi";
 import {
   computeImageFingerprint,
   evaluateDownload,
@@ -45,7 +46,8 @@ type Kind = ExportInfo["kind"];
 export default function ConvertExports() {
   const router = useRouter();
   const { user, userRecord } = useAuth();
-  const { resultSvg, layerSettings, hiddenLayers, originalImage, requestOpen, requestClear } = useEditorStore();
+  const { resultSvg, layerSettings, hiddenLayers, originalImage, requestOpen, requestClear, convertMode, photoOutput } = useEditorStore();
+  const photo = convertMode === "photo";
   const [busy, setBusy] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -58,6 +60,7 @@ export default function ConvertExports() {
   const layers = useMemo(() => (resultSvg ? parseLayers(resultSvg) : []), [resultSvg]);
   const visibleLayers = layers.filter((l) => !hiddenLayers.has(l.color));
   const ready = !!resultSvg && visibleLayers.length > 0 && !busy;
+  const photoReady = !!photoOutput && !busy;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -73,7 +76,7 @@ export default function ConvertExports() {
 
   /** Free-trial gate: same image downloaded again in another format counts once. */
   const gated = async (fn: () => Promise<void> | void) => {
-    if (busy || !resultSvg) return;
+    if (busy || (photo ? !photoOutput : !resultSvg)) return;
     setMenuOpen(false);
     setBusy(true);
     try {
@@ -113,6 +116,54 @@ export default function ConvertExports() {
       layers: visibleLayers.map((l) => ({ id: l.color, name: layerName(l.color), color: l.color, operation: "engrave", visible: true, count: l.pathCount })),
       hiddenLayerNames: layers.filter((l) => hiddenLayers.has(l.color)).map((l) => layerName(l.color)),
     });
+  };
+
+  /** Photo engrave: the dotted image as a PNG that opens at the chosen size (DPI stamped in). */
+  const photoPngBlob = async (): Promise<Blob> => {
+    if (!photoOutput) throw new Error("No photo engrave yet");
+    const { pixels, w, h, dpi } = photoOutput;
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d")!;
+    const img = ctx.createImageData(w, h);
+    for (let p = 0, i = 0; p < pixels.length; p++, i += 4) {
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = pixels[p];
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const raw = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("PNG failed"))), "image/png"));
+    const stamped = setPngDpi(new Uint8Array(await raw.arrayBuffer()), dpi);
+    return new Blob([stamped as BlobPart], { type: "image/png" });
+  };
+
+  const doPng = async () => {
+    if (!photoOutput) return;
+    const blob = await photoPngBlob();
+    const file = "vectorease-photo-engrave.png";
+    lastExport.current = { blob, file };
+    saveBlob(blob, file);
+    if (exportDialogSkipped()) return;
+    setExported({
+      kind: "png",
+      file,
+      shapeCount: 0,
+      board: { w: Math.round(photoOutput.widthMm), h: Math.round((photoOutput.h / photoOutput.w) * photoOutput.widthMm) },
+      layers: [],
+      hiddenLayerNames: [],
+    });
+  };
+
+  /** Photo engrave into the Studio as an image engrave, at its real size. */
+  const doPhotoToStudio = async () => {
+    if (!photoOutput) return;
+    const blob = await photoPngBlob();
+    const dataUrl = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob); });
+    const wMm = +photoOutput.widthMm.toFixed(2);
+    const hMm = +((photoOutput.h / photoOutput.w) * photoOutput.widthMm).toFixed(2);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${wMm}mm" height="${hMm}mm" viewBox="0 0 ${wMm} ${hMm}"><image href="${dataUrl}" x="0" y="0" width="${wMm}" height="${hMm}"/></svg>`;
+    setPendingStudioFiles([new File([svg], "Photo engrave.svg", { type: "image/svg+xml" })]);
+    router.push("/studio");
   };
 
   const doSvg = () => finish("svg", "vectorease-design.svg", new Blob([exportSvg()], { type: "image/svg+xml" }));
@@ -181,6 +232,16 @@ export default function ConvertExports() {
       <button onClick={() => requestOpen()} disabled={busy} className="btn-ghost" title="Open an image (or a .lac, .svg, .dxf laser file)">
         <FolderOpen className="w-4 h-4" /> <span className="hidden md:inline">Open</span>
       </button>
+      {photo ? (
+        <>
+          <button onClick={() => gated(doPhotoToStudio)} disabled={!photoReady} className="btn-ghost" title={photoOutput ? "Add names, dates, shapes or a cut-out border in the Studio" : "Upload a photo first"}>
+            <LayoutTemplate className="w-4 h-4" /> <span className="hidden lg:inline">Open in Studio</span>
+          </button>
+          <button onClick={() => gated(doPng)} disabled={!photoReady} className="btn-export" title={photoOutput ? "Laser-ready PNG for LightBurn, xTool, Bambu Suite…" : "Upload a photo first"}>
+            <Download className="w-4 h-4" /> Export PNG
+          </button>
+        </>
+      ) : (<>
       <button onClick={() => gated(doOpenInStudio)} disabled={!ready} className="btn-ghost" title={why ?? "Add names, dates, shapes or a cut line in the Studio"}>
         <LayoutTemplate className="w-4 h-4" /> <span className="hidden lg:inline">Open in Studio</span>
       </button>
@@ -201,6 +262,7 @@ export default function ConvertExports() {
           </div>
         )}
       </div>
+      </>)}
 
       {exported && (
         <ExportDoneDialog
@@ -209,7 +271,7 @@ export default function ConvertExports() {
           onDownloadAgain={() => lastExport.current && saveBlob(lastExport.current.blob, lastExport.current.file)}
           primaryLabel="Keep tuning"
           actions={[
-            { label: "Open in Studio", icon: LayoutTemplate, onClick: () => { setExported(null); doOpenInStudio(); } },
+            { label: "Open in Studio", icon: LayoutTemplate, onClick: () => { setExported(null); if (photo) doPhotoToStudio(); else doOpenInStudio(); } },
             { label: "Convert another image", icon: ImagePlus, onClick: () => { setExported(null); requestClear(); } },
           ]}
         />

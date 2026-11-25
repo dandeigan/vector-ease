@@ -5,7 +5,7 @@ import { CheckCircle2, Download, FilePlus2, ImageIcon, X, type LucideIcon } from
 import type { LayerWithCount } from "@/lib/studio/engine";
 
 export interface ExportInfo {
-  kind: "svg" | "lac" | "lbrn2" | "dxf";
+  kind: "svg" | "lac" | "lbrn2" | "dxf" | "png";
   file: string;
   shapeCount: number;
   /** Design size in mm, when known. */
@@ -29,6 +29,11 @@ const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
     "Double-click the file to open it in LightBurn.",
     "Layer names, modes, speed and power are already set. Adjust them for your material.",
     "Check the size and position on the bed, then run a test on scrap first.",
+  ],
+  png: [
+    "Import the PNG into LightBurn, xTool Creative Space or Bambu Suite. It opens at the size you picked.",
+    "The dots are already done: in LightBurn set the image mode to Passthrough and the line interval shown in VectorEase. In Bambu Suite use it as an image engrave.",
+    "Run a small test on scrap of the same material first, then adjust power, or Brightness in VectorEase.",
   ],
   dxf: [
     "Import the file into your laser or CAD software.",
@@ -97,10 +102,10 @@ export default function ExportDoneDialog({
         </div>
         <p className="text-sm text-foreground-muted mt-2 leading-relaxed">
           <b className="text-foreground break-all">{info.file}</b> is in your <b className="text-foreground">Downloads</b> folder.
-          {" "}{info.shapeCount} shape{info.shapeCount === 1 ? "" : "s"}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
+          {" "}{info.kind === "png" ? "Photo engrave" : `${info.shapeCount} shape${info.shapeCount === 1 ? "" : "s"}`}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
         </p>
 
-        <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
+        {info.kind !== "png" && <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground-muted mb-2">In this file</div>
           <ul className="space-y-1.5">
             {info.layers.map((l) => (
@@ -114,7 +119,7 @@ export default function ExportDoneDialog({
           {info.hiddenLayerNames.length > 0 && (
             <p className="text-xs text-dd-gold-400 mt-2">Left out because they were hidden: {info.hiddenLayerNames.join(", ")}.</p>
           )}
-        </div>
+        </div>}
 
         <div className="mt-4">
           <div className="text-sm font-semibold mb-1.5">What&apos;s next</div>

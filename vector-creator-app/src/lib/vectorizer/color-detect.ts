@@ -10,11 +10,46 @@ export interface DetectedColor {
 }
 
 /**
- * True when the image looks like a drawing or sketch: almost no colour, and
- * mostly light paper. Convert uses it to suggest Line art mode.
+ * What kind of picture this is, from a 160 px sample:
+ * - drawing: almost no colour and mostly light paper (Convert suggests Line art)
+ * - photo: smooth tones everywhere, no handful of flat colours covering most
+ *   of it (Convert suggests Photo engrave)
  */
-export async function looksLikeDrawing(imageUrl: string): Promise<boolean> {
+export function classifyPixels(d: Uint8ClampedArray | Uint8Array, W: number, H: number): { drawing: boolean; photo: boolean } {
+  let total = 0, grey = 0, light = 0;
+  const luma = new Float32Array(W * H);
+  for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+    luma[p] = d[i + 3] < 128 ? -1 : 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    if (d[i + 3] < 128) continue;
+    total++;
+    const max = Math.max(d[i], d[i + 1], d[i + 2]), min = Math.min(d[i], d[i + 1], d[i + 2]);
+    if (max - min < 40) grey++;
+    if (luma[p] > 185) light++;
+  }
+  if (!total) return { drawing: false, photo: false };
+  const drawing = grey / total > 0.92 && light / total > 0.3;
+  // Photos have gentle tone changes between neighbours almost everywhere and
+  // use nearly every shade; flat graphics are mostly flat with sharp edges.
+  let soft = 0, pairs = 0;
+  const levels = new Set<number>();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const a = luma[y * W + x];
+    if (a < 0) continue;
+    levels.add(Math.round(a));
+    if (x + 1 >= W) continue;
+    const b = luma[y * W + x + 1];
+    if (b < 0) continue;
+    pairs++;
+    const diff = Math.abs(a - b);
+    if (diff >= 1.5 && diff < 24) soft++;
+  }
+  const photo = !drawing && pairs > 0 && soft / pairs >= 0.3 && levels.size >= 240;
+  return { drawing, photo };
+}
+
+export async function classifyImage(imageUrl: string): Promise<{ drawing: boolean; photo: boolean }> {
   return new Promise((resolve) => {
+    const none = { drawing: false, photo: false };
     const img = new Image();
     img.onload = () => {
       const scale = Math.min(160 / img.width, 160 / img.height, 1);
@@ -22,22 +57,17 @@ export async function looksLikeDrawing(imageUrl: string): Promise<boolean> {
       canvas.width = Math.max(1, Math.round(img.width * scale));
       canvas.height = Math.max(1, Math.round(img.height * scale));
       const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(false);
+      if (!ctx) return resolve(none);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      let total = 0, grey = 0, light = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i + 3] < 128) continue;
-        total++;
-        const max = Math.max(d[i], d[i + 1], d[i + 2]), min = Math.min(d[i], d[i + 1], d[i + 2]);
-        if (max - min < 40) grey++;
-        if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] > 185) light++;
-      }
-      resolve(total > 0 && grey / total > 0.92 && light / total > 0.3);
+      resolve(classifyPixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height));
     };
-    img.onerror = () => resolve(false);
+    img.onerror = () => resolve(none);
     img.src = imageUrl;
   });
+}
+
+export async function looksLikeDrawing(imageUrl: string): Promise<boolean> {
+  return (await classifyImage(imageUrl)).drawing;
 }
 
 /**

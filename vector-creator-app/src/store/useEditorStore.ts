@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
+import { DEFAULT_ENGRAVE, type EngraveOptions } from "@/lib/photo/engrave";
 
 export interface PaletteColor {
   r: number;
@@ -88,6 +89,21 @@ interface EditorState {
   traceError: string | null;
   setTraceError: (msg: string | null) => void;
 
+  // Convert makes either vector layers or a Photo engrave (laser-ready dotted image).
+  convertMode: "vector" | "photo";
+  setConvertMode: (m: "vector" | "photo") => void;
+  // Set on upload: the image looks like a real photo (Convert suggests Photo engrave).
+  looksLikePhoto: boolean;
+  setLooksLikePhoto: (v: boolean) => void;
+  engrave: EngraveOptions;
+  setEngrave: (patch: Partial<EngraveOptions>) => void;
+  // The upload with its background removed (AI), kept so it can be toggled on and off.
+  cutoutImage: string | null;
+  setCutoutImage: (url: string | null) => void;
+  // The finished Photo engrave: one byte per laser dot, 0 = burn.
+  photoOutput: { pixels: Uint8ClampedArray; w: number; h: number; dpi: number; widthMm: number } | null;
+  setPhotoOutput: (o: EditorState["photoOutput"]) => void;
+
   // Global actions
   resetWorkspace: () => void;
 }
@@ -140,7 +156,23 @@ export const useEditorStore = create<EditorState>((set) => ({
   traceError: null,
   setTraceError: (msg) => set({ traceError: msg }),
 
+  convertMode: "vector",
+  setConvertMode: (m) => set({ convertMode: m }),
+  looksLikePhoto: false,
+  setLooksLikePhoto: (v) => set({ looksLikePhoto: v }),
+  engrave: DEFAULT_ENGRAVE,
+  setEngrave: (patch) => set((st) => ({ engrave: { ...st.engrave, ...patch } })),
+  cutoutImage: null,
+  setCutoutImage: (url) => set({ cutoutImage: url }),
+  photoOutput: null,
+  setPhotoOutput: (o) => set({ photoOutput: o }),
+
   resetWorkspace: () => set({
+    convertMode: "vector",
+    looksLikePhoto: false,
+    engrave: DEFAULT_ENGRAVE,
+    cutoutImage: null,
+    photoOutput: null,
     looksLikeDrawing: false,
     traceError: null,
     originalImage: null,

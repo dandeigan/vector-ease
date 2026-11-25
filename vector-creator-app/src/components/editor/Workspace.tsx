@@ -1,13 +1,14 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal, Sparkles, AlertTriangle } from "lucide-react";
+import { UploadCloud, ImageIcon, ScanSearch, Check, SlidersHorizontal, Sparkles, AlertTriangle, Camera } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isStudioFile, setPendingStudioFiles } from "@/lib/studio/handoff";
 import TuningPanel from "./TuningPanel";
 import { traceImageToSVG } from "@/lib/vectorizer/imagetracer-wrapper";
-import { detectImageColors, looksLikeDrawing, type DetectedColor } from "@/lib/vectorizer/color-detect";
+import { detectImageColors, classifyImage, type DetectedColor } from "@/lib/vectorizer/color-detect";
+import PhotoPreview from "./PhotoPreview";
 import { removeBackground } from "@/lib/vectorizer/background-remove";
 import { useAuth } from "@/components/auth/AuthContext";
 import { logVectorization } from "@/lib/firebase/users";
@@ -23,6 +24,7 @@ export default function Workspace() {
     setOptions,
     openRequest, clearRequest,
     setLooksLikeDrawing, traceError, setTraceError,
+    convertMode, setConvertMode, setLooksLikePhoto, setCutoutImage, setPhotoOutput,
   } = useEditorStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -46,6 +48,11 @@ export default function Workspace() {
     setDisplaySvg(null);
     setShowDetection(false);
     setDetectedColors([]);
+    setCutoutImage(null);
+    setPhotoOutput(null);
+    setLooksLikePhoto(false);
+    setLooksLikeDrawing(false);
+    setConvertMode("vector");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearRequest]);
 
@@ -54,12 +61,17 @@ export default function Workspace() {
     reader.onload = async (event) => {
       if (event.target?.result) {
         const imgUrl = event.target.result as string;
-        setOriginalImage(imgUrl);
         setTraceError(null);
-        setLooksLikeDrawing(false);
-        looksLikeDrawing(imgUrl).then(setLooksLikeDrawing);
         setResultSvg(null);
         setDisplaySvg(null);
+        setCutoutImage(null);
+        setPhotoOutput(null);
+        // Real photos go straight to Photo engrave; drawings get a Line art suggestion.
+        const kind = await classifyImage(imgUrl);
+        setLooksLikeDrawing(kind.drawing);
+        setLooksLikePhoto(kind.photo);
+        setConvertMode(kind.photo ? "photo" : "vector");
+        setOriginalImage(imgUrl);
         setShowDetection(true);
         setIsDetecting(true);
 
@@ -175,6 +187,7 @@ export default function Workspace() {
       const result = await removeBackground(originalImage, (msg) => {
         setLoadingMessage(msg);
       });
+      setCutoutImage(result);
       setOriginalImage(result);
       setResultSvg(null);
       setDisplaySvg(null);
@@ -194,6 +207,7 @@ export default function Workspace() {
       }
     } catch (err) {
       console.error("Background removal failed:", err);
+      setTraceError(err instanceof Error ? err.message : "Background removal failed.");
     } finally {
       setIsRemovingBg(false);
     }
@@ -262,37 +276,36 @@ export default function Workspace() {
               <span>Your image is only used to make your vector. We don&apos;t keep it.</span>
             </div>
 
-            {/* Best-results guidance — helps users avoid common bad inputs (photos, watercolors, etc.)
-                that VTracer struggles with. Set expectations BEFORE upload, not after a muddy result. */}
+            {/* What each mode is for. Photos switch to Photo engrave on their own. */}
             <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl px-4">
               <div className="rounded-xl border border-dd-gold-400/20 bg-dd-gold-400/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-3.5 h-3.5 text-dd-gold-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-dd-gold-400">Best Results</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-dd-gold-400">Vector layers</span>
                 </div>
                 <ul className="text-[11px] text-foreground-muted space-y-1 leading-relaxed">
-                  <li>• Clean logos & wordmarks</li>
-                  <li>• Silhouettes & simple shapes</li>
-                  <li>• Line art & hand-drawn sketches</li>
-                  <li>• High-contrast B&amp;W designs</li>
-                  <li>• Limited colors (2–6)</li>
+                  <li>• Logos, wordmarks and text</li>
+                  <li>• Silhouettes and simple shapes</li>
+                  <li>• Line art and hand-drawn sketches</li>
+                  <li>• Anything you want to cut or score</li>
                 </ul>
               </div>
               <div className="rounded-xl border border-dd-blue-400/20 bg-dd-blue-400/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-dd-blue-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-dd-blue-400">Tougher Inputs</span>
+                  <Camera className="w-3.5 h-3.5 text-dd-blue-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-dd-blue-400">Photo engrave</span>
                 </div>
                 <ul className="text-[11px] text-foreground-muted space-y-1 leading-relaxed">
-                  <li>• Photos of people or scenes</li>
-                  <li>• Watercolors &amp; soft gradients</li>
-                  <li>• Fine text on detailed shapes</li>
-                  <li>• Wood grain / textured backgrounds</li>
-                  <li>• Tip: try Remove Background first</li>
+                  <li>• People, pets and scenery</li>
+                  <li>• AI background removal</li>
+                  <li>• Tuned for wood, leather, slate, metal</li>
+                  <li>• Photos switch to it automatically</li>
                 </ul>
               </div>
             </div>
           </div>
+        ) : convertMode === "photo" ? (
+          <PhotoPreview />
         ) : (
           /* ── Preview ── */
           <div className="flex-1 flex flex-col min-h-0">

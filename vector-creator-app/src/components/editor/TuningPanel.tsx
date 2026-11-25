@@ -1,7 +1,8 @@
 "use client";
 
 import { useEditorStore } from "@/store/useEditorStore";
-import { Play, Wand2, Layers, Spline, Eye, EyeOff, Sparkles, AlertTriangle, PenTool } from "lucide-react";
+import { Play, Wand2, Layers, Spline, Eye, EyeOff, Sparkles, AlertTriangle, PenTool, Camera, Shapes } from "lucide-react";
+import PhotoPanel from "./PhotoPanel";
 import { useEffect, useMemo } from "react";
 import { defaultPresetForMode, type LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { colorName, filterSvg, parseLayers } from "@/lib/vectorizer/svg-layers";
@@ -15,7 +16,7 @@ interface TuningPanelProps {
 }
 
 export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemovingBg, disabled, onFilteredSvgChange }: TuningPanelProps) {
-  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, hiddenLayers, setHiddenLayers, looksLikeDrawing } = useEditorStore();
+  const { options, setOptions, resultSvg, layerSettings, updateLayerSettings, ensureLayerSettings, hiddenLayers, setHiddenLayers, looksLikeDrawing, looksLikePhoto, convertMode, setConvertMode } = useEditorStore();
 
   /**
    * One-click presets for common input types.
@@ -84,8 +85,47 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
     setHiddenLayers(new Set());
   };
 
+  // Vector layers or Photo engrave: two ways to turn an image into a laser job.
+  const modeTabs = (
+    <div className="px-5 pt-4">
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-background/60 border border-border" role="tablist">
+        {([
+          ["vector", Shapes, "Vector layers"],
+          ["photo", Camera, "Photo engrave"],
+        ] as const).map(([id, Icon, label]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={convertMode === id}
+            onClick={() => setConvertMode(id)}
+            className={`py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+              convertMode === id ? "bg-dd-gold-400 text-[#080B12] shadow" : "text-foreground-muted hover:text-foreground"
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
+        {convertMode === "photo"
+          ? "Photos engrave as fine dots, like a printed photo. Best for faces, pets and scenery."
+          : "Cut, score and fill shapes. Best for logos, text, drawings and stencils."}
+      </p>
+    </div>
+  );
+
+  if (convertMode === "photo") {
+    return (
+      <div className="rounded-2xl border border-border bg-card flex flex-col">
+        {modeTabs}
+        <PhotoPanel disabled={disabled} />
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card flex flex-col">
+      {modeTabs}
       {/* ── Header ── */}
       <div className="px-5 py-4 border-b border-border">
         <h3 className="text-sm font-bold text-dd-gold-400 uppercase tracking-wider">Layer Tuning</h3>
@@ -142,6 +182,21 @@ export default function TuningPanel({ onTraceTrigger, onRemoveBackground, isRemo
           <p className="text-[10px] text-foreground-muted mt-2 leading-relaxed">
             Pick a starting point, then fine-tune below if needed.
           </p>
+          {looksLikePhoto && (
+            <div className="mt-3 rounded-lg border border-dd-gold-400/40 bg-dd-gold-400/[0.06] p-3">
+              <p className="text-xs text-foreground leading-relaxed">
+                <Camera className="inline w-3.5 h-3.5 text-dd-gold-400 mr-1 -mt-0.5" />
+                This looks like a photo. Photo engrave keeps faces, fur and shading looking real.
+              </p>
+              <button
+                onClick={() => setConvertMode("photo")}
+                disabled={disabled}
+                className="mt-2 w-full py-1.5 rounded-md text-xs font-semibold bg-dd-gold-400 text-[#080B12] hover:bg-dd-gold-300 disabled:opacity-40"
+              >
+                Use Photo engrave
+              </button>
+            </div>
+          )}
           {looksLikeDrawing && !options.lineArt && (
             <div className="mt-3 rounded-lg border border-dd-gold-400/40 bg-dd-gold-400/[0.06] p-3">
               <p className="text-xs text-foreground leading-relaxed">
