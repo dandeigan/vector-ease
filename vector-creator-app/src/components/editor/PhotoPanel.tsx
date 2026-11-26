@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Wand2, Ruler, Sun, Contrast, Mountain, Focus, Grip, FlipVertical2, RotateCcw, Info, Sparkles, Type, Flame, Download } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { DEFAULT_ENGRAVE, DITHERS, DPI_CHOICES, MATERIALS, materialById, type MaterialId } from "@/lib/photo/engrave";
 import { removeBackground, loadImage } from "@/lib/vectorizer/background-remove";
 import { buildTestCard, busiestSquare, cardCropPx } from "@/lib/photo/test-card";
 import { setPngDpi } from "@/lib/photo/png-dpi";
+import { engraveDefaultsWithMemory, rememberedSpread } from "@/lib/photo/engrave-memory";
+
+// Saved wood/laser settings are applied once per page load (the store starts
+// with plain defaults so the server render matches). New images get them from
+// resetWorkspace.
+let memoryApplied = false;
 
 /** Convert's side panel in Photo engrave mode. */
 export default function PhotoPanel({ disabled }: { disabled: boolean }) {
@@ -89,8 +95,19 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
 
   const pickMaterial = (id: MaterialId) => {
     const m = materialById(id);
-    setEngrave({ material: id, invert: m.invert, dither: m.dither });
+    setEngrave({ material: id, invert: m.invert, dither: m.dither, burnSpread: rememberedSpread(id) });
   };
+
+  useEffect(() => {
+    if (memoryApplied) return;
+    memoryApplied = true;
+    const mem = engraveDefaultsWithMemory();
+    const cur = useEditorStore.getState().engrave;
+    // Only if the user hasn't changed these yet on this page.
+    if (cur.material === DEFAULT_ENGRAVE.material && cur.dpi === DEFAULT_ENGRAVE.dpi && (cur.burnSpread ?? 0) === 0) {
+      setEngrave({ material: mem.material, invert: mem.invert, dither: mem.dither, dpi: mem.dpi, burnSpread: mem.burnSpread });
+    }
+  }, [setEngrave]);
 
   const heightMm = photoOutput ? Math.round((photoOutput.h / photoOutput.w) * engrave.widthMm) : null;
   const interval = (25.4 / engrave.dpi).toFixed(2);
@@ -197,7 +214,7 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
         <Slider
           icon={Flame}
           label="Burn spread"
-          hint="If eyes and skin burn too dark, raise this. Each laser dot burns wider than it should on many woods, so the mid-tones fill in. Higher fires fewer dots in the mid-tones; pure black and white stay the same. 0 = off."
+          hint="If eyes and skin burn too dark, raise this. Each laser dot burns wider than it should on many woods, so the mid-tones fill in. Higher fires fewer dots in the mid-tones; pure black and white stay the same. 0 = off. Remembered for each material, so set it once per wood."
           value={engrave.burnSpread ?? 0}
           min={0}
           max={5}

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { LightBurnMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { DEFAULT_ENGRAVE, type EngraveOptions } from "@/lib/photo/engrave";
+import { engraveDefaultsWithMemory, saveEngraveMemory } from "@/lib/photo/engrave-memory";
 import { DEFAULT_STENCIL, type StencilOptions } from "@/lib/photo/stencil";
 
 export interface PaletteColor {
@@ -187,7 +188,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   looksLikePhoto: false,
   setLooksLikePhoto: (v) => set({ looksLikePhoto: v }),
   engrave: DEFAULT_ENGRAVE,
-  setEngrave: (patch) => set((st) => ({ engrave: { ...st.engrave, ...patch } })),
+  setEngrave: (patch) => set((st) => {
+    const engrave = { ...st.engrave, ...patch };
+    if ("material" in patch || "dpi" in patch || "burnSpread" in patch) saveEngraveMemory(engrave);
+    return { engrave };
+  }),
   cutoutImage: null,
   setCutoutImage: (url) => set({ cutoutImage: url }),
   photoOutput: null,
@@ -203,7 +208,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     stencil: DEFAULT_STENCIL,
     stencilFlat: null,
     looksLikePhoto: false,
-    engrave: DEFAULT_ENGRAVE,
+    // A new image keeps the user's wood and laser settings (material, DPI, Burn spread).
+    engrave: engraveDefaultsWithMemory(),
     cutoutImage: null,
     photoOutput: null,
     touchLayers: null,
