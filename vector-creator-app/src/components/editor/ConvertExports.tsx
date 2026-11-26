@@ -13,6 +13,7 @@ import { setPendingStudioFiles } from "@/lib/studio/handoff";
 import { svgToDxf } from "@/lib/vectorizer/svg-to-dxf";
 import { svgToLbrn2, defaultPresetForMode } from "@/lib/vectorizer/svg-to-lbrn2";
 import { colorName, parseLayers, stripHiddenLayers } from "@/lib/vectorizer/svg-layers";
+import { findBackgroundLayer, type BackgroundLayer } from "@/lib/vectorizer/background-layer";
 import { setPngDpi } from "@/lib/photo/png-dpi";
 import {
   computeImageFingerprint,
@@ -37,6 +38,7 @@ function saveBlob(blob: Blob, file: string) {
 }
 
 type Kind = ExportInfo["kind"];
+type VectorAction = "svg" | "lac" | "lbrn2" | "dxf" | "studio";
 
 /**
  * Convert's export buttons, in the top bar like the Studio's:
@@ -46,13 +48,17 @@ type Kind = ExportInfo["kind"];
 export default function ConvertExports() {
   const router = useRouter();
   const { user, userRecord } = useAuth();
-  const { resultSvg, layerSettings, hiddenLayers, originalImage, requestOpen, requestClear, convertMode, photoOutput } = useEditorStore();
+  const { resultSvg, layerSettings, hiddenLayers, setHiddenLayers, originalImage, requestOpen, requestClear, convertMode, photoOutput } = useEditorStore();
   const photo = convertMode === "photo";
   const [busy, setBusy] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [exported, setExported] = useState<ExportInfo | null>(null);
   const lastExport = useRef<{ blob: Blob; file: string } | null>(null);
+  // Background layer question: asked once per design, before the first vector export.
+  const bgAnswered = useRef<string | null>(null);
+  const [bgAsk, setBgAsk] = useState<{ bg: BackgroundLayer; action: VectorAction } | null>(null);
+  const [queued, setQueued] = useState<VectorAction | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isPaidOrAdmin = userRecord?.role === "superadmin" || userRecord?.subscriptionStatus === "active";
@@ -217,6 +223,39 @@ export default function ConvertExports() {
     router.push("/studio");
   };
 
+  const actions: Record<VectorAction, () => Promise<void> | void> = { svg: doSvg, lac: doLac, lbrn2: doLbrn2, dxf: doDxf, studio: doOpenInStudio };
+
+  /** Vector exports: if the lightest colour fills in behind everything, ask first whether to burn it. */
+  const exportVector = async (action: VectorAction) => {
+    setMenuOpen(false);
+    if (!resultSvg || busy) return;
+    if (bgAnswered.current !== resultSvg) {
+      const bg = await findBackgroundLayer(resultSvg, layers).catch(() => null);
+      if (bg && !hiddenLayers.has(bg.color)) { setBgAsk({ bg, action }); return; }
+      bgAnswered.current = resultSvg;
+    }
+    gated(actions[action]);
+  };
+
+  const answerBg = (leaveOut: boolean) => {
+    if (!bgAsk || !resultSvg) return;
+    bgAnswered.current = resultSvg;
+    const { bg, action } = bgAsk;
+    setBgAsk(null);
+    if (leaveOut) {
+      setHiddenLayers(new Set([...hiddenLayers, bg.color]));
+      setQueued(action); // runs after the hidden layer is applied
+    } else gated(actions[action]);
+  };
+
+  useEffect(() => {
+    if (!queued) return;
+    const a = queued;
+    setQueued(null);
+    gated(actions[a]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued, hiddenLayers]);
+
   const why = !resultSvg ? "Upload an image and click Apply & Vectorize first" : visibleLayers.length ? undefined : "Every layer is hidden";
 
   return (
@@ -242,13 +281,13 @@ export default function ConvertExports() {
           </button>
         </>
       ) : (<>
-      <button onClick={() => gated(doOpenInStudio)} disabled={!ready} className="btn-ghost" title={why ?? "Add names, dates, shapes or a cut line in the Studio"}>
+      <button onClick={() => exportVector("studio")} disabled={!ready} className="btn-ghost" title={why ?? "Add names, dates, shapes or a cut line in the Studio"}>
         <LayoutTemplate className="w-4 h-4" /> <span className="hidden lg:inline">Open in Studio</span>
       </button>
-      <button onClick={() => gated(doSvg)} disabled={!ready} className="btn-export" title={why ?? "Export SVG for LightBurn, xTool, Glowforge…"}>
+      <button onClick={() => exportVector("svg")} disabled={!ready} className="btn-export" title={why ?? "Export SVG for LightBurn, xTool, Glowforge…"}>
         <Download className="w-4 h-4" /> Export SVG
       </button>
-      <button onClick={() => gated(doLac)} disabled={!ready} className="btn-export" title={why ?? "Export a Bambu Suite project (.lac)"}>
+      <button onClick={() => exportVector("lac")} disabled={!ready} className="btn-export" title={why ?? "Export a Bambu Suite project (.lac)"}>
         <Download className="w-4 h-4" /> Export .lac
       </button>
       <div className="relative" ref={menuRef}>
@@ -257,8 +296,8 @@ export default function ConvertExports() {
         </button>
         {menuOpen && (
           <div role="menu" className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-border bg-background-raised shadow-2xl p-1.5 z-50">
-            <MenuItem icon={Flame} label="LightBurn (.lbrn2)" hint="Layer names, speed and power already set" onClick={() => gated(doLbrn2)} />
-            <MenuItem icon={FileCode2} label="DXF" hint="For CAD software and older laser programs" onClick={() => gated(doDxf)} />
+            <MenuItem icon={Flame} label="LightBurn (.lbrn2)" hint="Layer names, speed and power already set" onClick={() => exportVector("lbrn2")} />
+            <MenuItem icon={FileCode2} label="DXF" hint="For CAD software and older laser programs" onClick={() => exportVector("dxf")} />
           </div>
         )}
       </div>
@@ -275,6 +314,26 @@ export default function ConvertExports() {
             { label: "Convert another image", icon: ImagePlus, onClick: () => { setExported(null); requestClear(); } },
           ]}
         />
+      )}
+
+      {bgAsk && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onPointerDown={(e) => { if (e.target === e.currentTarget) setBgAsk(null); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="bg-layer-title" className="relative w-full max-w-md rounded-2xl border border-border bg-background-raised shadow-2xl p-6">
+            <div className="flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-md border border-white/15 shrink-0" style={{ background: bgAsk.bg.color }} />
+              <h2 id="bg-layer-title" className="text-lg font-bold">Burn the background?</h2>
+            </div>
+            <p className="text-sm text-foreground-muted mt-2 leading-relaxed">
+              The lightest colour, <b className="text-foreground">{layerName(bgAsk.bg.color)}</b>, is one big shape behind everything, covering about {Math.round(bgAsk.bg.coverage * 100)}% of the design.
+              A laser burns every layer, so keeping it darkens most of the board. Leave it out and that area stays bare wood.
+            </p>
+            <div className="mt-5 grid gap-2">
+              <button onClick={() => answerBg(true)} className="btn-export justify-center w-full">Leave it out (bare wood)</button>
+              <button onClick={() => answerBg(false)} className="btn-ghost justify-center w-full">Keep it in the file</button>
+            </div>
+            <p className="text-[11px] text-foreground-muted mt-3 leading-relaxed">You can change this any time with the eye button on the layer in the Layers list.</p>
+          </div>
+        </div>
       )}
 
       {showPaywall && (
