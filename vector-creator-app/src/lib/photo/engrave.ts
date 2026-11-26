@@ -493,11 +493,12 @@ function applyGraphics(out: Uint8ClampedArray, gray: Float32Array, alpha: Float3
  * Remove lone burn dots: a dot with no burned neighbour is a pin-prick that
  * burns shallow and sands away unevenly, leaving light areas looking dirty.
  */
-function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number) {
+function cleanLoneDots(px: Uint8ClampedArray, W: number, H: number, only: Float32Array | null = null) {
   const src = px.slice();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const p = y * W + x;
     if (src[p] !== 0) continue;
+    if (only && only[p] < 0.8) continue;
     let burnt = 0;
     for (let dy = -1; dy <= 1 && !burnt; dy++) for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue;
@@ -670,6 +671,9 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
   const b = o.brightness * 2;
   const gamma = mat.gamma;
   const spread = Math.max(0, Math.min(5, o.burnSpread ?? 0)) * 0.4;
+  // With Burn spread on: where the tone was nearly white before spreading
+  // (sky, white walls), stray dots are still cleaned so it stays bare wood.
+  const nearWhite = new Float32Array(spread > 0 ? n : 0);
   // Big solid-black areas of the photo (poster backgrounds): share of nearby
   // pixels that are black. Black pixels in a mostly-black area burn solid;
   // shadows inside a face or car are too broken up to qualify.
@@ -713,7 +717,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     // Burn spread: each dot burns wider than its slot, so a patch with share d
     // of dots looks like 1-(1-d)^(1+s) burned. Fire fewer dots to land on the
     // tone we want. Pure black and pure white are unchanged.
-    if (spread > 0) x = 255 * Math.pow(Math.max(0, Math.min(255, x)) / 255, 1 / (1 + spread));
+    if (spread > 0) {
+      if (x >= 228) nearWhite[p] = 1;
+      x = 255 * Math.pow(Math.max(0, Math.min(255, x)) / 255, 1 / (1 + spread));
+    }
     // Snap near-white / near-black so highlights and shadows don't get stray dots.
     if (x >= 247) x = 255;
     else if (x <= 6) x = 0;
@@ -737,6 +744,8 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
     }
   }
 
+  const lightZone = spread > 0 ? boxBlur(nearWhite, W, H, 2) : null;
+
   // 5. Dots.
   const finish = (tones: Float32Array) => {
     let out: Uint8ClampedArray;
@@ -745,10 +754,10 @@ export function engravePixels(rgba: Uint8ClampedArray | Uint8Array, W: number, H
       for (let p = 0; p < n; p++) out[p] = tones[p];
     } else {
       out = dither(tones.slice(), W, H, o.dither);
-      // Lone dots are skipped when Burn spread is on: on a wood that spreads,
-      // those sparse dots are the light skin tones, and removing them leaves
-      // blank white blotches with hard edges.
-      if ((o.cleanDots ?? true) && !(spread > 0)) cleanLoneDots(out, W, H);
+      // With Burn spread on, lone dots are only cleaned in nearly white areas:
+      // elsewhere those sparse dots are the light skin tones, and removing
+      // them leaves blank white blotches with hard edges.
+      if (o.cleanDots ?? true) cleanLoneDots(out, W, H, spread > 0 ? lightZone : null);
     }
     if (o.crispGraphics ?? false) applyGraphics(out, gray, alpha, W, H, o, cut?.flip);
     if (flatBlack) crispPosterText(out, gray, alpha, flatBlack, cut?.flip ?? null, W, H, o, poster);
