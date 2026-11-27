@@ -17,6 +17,7 @@ import { findBackgroundLayer, type BackgroundLayer } from "@/lib/vectorizer/back
 import { setPngDpi } from "@/lib/photo/png-dpi";
 import { fmtSpeed, loadLaser, modelLabel, recommendPhoto } from "@/lib/photo/laser-profile";
 import { materialById } from "@/lib/photo/engrave";
+import { photoToLbrn2 } from "@/lib/photo/photo-lbrn2";
 import {
   computeImageFingerprint,
   evaluateDownload,
@@ -163,6 +164,34 @@ export default function ConvertExports() {
     });
   };
 
+  /** Photo engrave as a LightBurn project: the dots plus speed, power and line interval already set. */
+  const doPhotoLbrn = async () => {
+    if (!photoOutput) return;
+    const png = new Uint8Array(await (await photoPngBlob()).arrayBuffer());
+    const { engrave } = useEditorStore.getState();
+    const laser = loadLaser();
+    const s = laser ? (laser.saved?.[engrave.material] ?? recommendPhoto(laser, engrave.material)) : { speed: 6000, power: 20 };
+    const widthMm = photoOutput.widthMm;
+    const xml = photoToLbrn2({
+      png, widthMm, heightMm: (photoOutput.h / photoOutput.w) * widthMm, dpi: photoOutput.dpi,
+      speedMmMin: s.speed, powerPct: s.power, grayscale: engrave.dither === "grayscale",
+    });
+    const blob = new Blob([xml], { type: "application/xml" });
+    const file = "vectorease-photo-engrave.lbrn2";
+    lastExport.current = { blob, file };
+    saveBlob(blob, file);
+    if (exportDialogSkipped()) return;
+    setExported({
+      kind: "photo-lbrn2",
+      file,
+      shapeCount: 0,
+      board: { w: Math.round(widthMm), h: Math.round((photoOutput.h / photoOutput.w) * widthMm) },
+      layers: [],
+      hiddenLayerNames: [],
+      laser: laserInfo() ?? { machine: "No laser set up yet", speed: fmtSpeed(6000), power: 20, saved: false, material: materialById(engrave.material).label },
+    });
+  };
+
   /** The user's laser, with speed and power for the current material (saved or estimated). */
   const laserInfo = (): ExportInfo["laser"] => {
     const laser = loadLaser();
@@ -291,6 +320,9 @@ export default function ConvertExports() {
           </button>
           <button onClick={() => gated(doPng)} disabled={!photoReady} className="btn-export" title={photoOutput ? "Laser-ready PNG for LightBurn, xTool, Bambu Suite…" : "Upload a photo first"}>
             <Download className="w-4 h-4" /> Export PNG
+          </button>
+          <button onClick={() => gated(doPhotoLbrn)} disabled={!photoReady} className="btn-export" title={photoOutput ? "LightBurn project with the photo, speed, power and line interval already set" : "Upload a photo first"}>
+            <Flame className="w-4 h-4" /> <span className="hidden sm:inline">LightBurn</span> .lbrn2
           </button>
         </>
       ) : (<>

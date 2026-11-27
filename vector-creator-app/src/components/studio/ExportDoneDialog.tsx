@@ -5,7 +5,7 @@ import { CheckCircle2, Download, FilePlus2, ImageIcon, X, type LucideIcon } from
 import type { LayerWithCount } from "@/lib/studio/engine";
 
 export interface ExportInfo {
-  kind: "svg" | "lac" | "lbrn2" | "dxf" | "png";
+  kind: "svg" | "lac" | "lbrn2" | "dxf" | "png" | "photo-lbrn2";
   file: string;
   shapeCount: number;
   /** Design size in mm, when known. */
@@ -36,6 +36,11 @@ const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
     "Import the PNG into LightBurn, xTool Creative Space or Bambu Suite. It opens at the size you picked.",
     "The dots are already done: in LightBurn set the image mode to Passthrough and the line interval shown in VectorEase. In Bambu Suite use it as an image engrave.",
     "Run a small test on scrap of the same material first, then adjust power, or Brightness in VectorEase.",
+  ],
+  "photo-lbrn2": [
+    "Double-click the file to open it in LightBurn. The photo comes in at the size you picked, on one Image layer.",
+    "Speed, power and line interval are already set. The image mode shows Threshold: that burns exactly VectorEase's dots, the same as Pass-Through. Leave it.",
+    "Check the size and position on the bed, then run a small test on scrap of the same material first.",
   ],
   dxf: [
     "Import the file into your laser or CAD software.",
@@ -104,10 +109,10 @@ export default function ExportDoneDialog({
         </div>
         <p className="text-sm text-foreground-muted mt-2 leading-relaxed">
           <b className="text-foreground break-all">{info.file}</b> is in your <b className="text-foreground">Downloads</b> folder.
-          {" "}{info.kind === "png" ? "Photo engrave" : `${info.shapeCount} shape${info.shapeCount === 1 ? "" : "s"}`}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
+          {" "}{info.kind === "png" || info.kind === "photo-lbrn2" ? "Photo engrave" : `${info.shapeCount} shape${info.shapeCount === 1 ? "" : "s"}`}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
         </p>
 
-        {info.kind !== "png" && <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
+        {info.kind !== "png" && info.kind !== "photo-lbrn2" && <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground-muted mb-2">In this file</div>
           <ul className="space-y-1.5">
             {info.layers.map((l) => (
