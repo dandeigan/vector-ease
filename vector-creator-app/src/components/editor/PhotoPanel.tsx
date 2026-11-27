@@ -8,6 +8,8 @@ import { removeBackground, loadImage } from "@/lib/vectorizer/background-remove"
 import { buildTestCard, busiestSquare, cardCropPx } from "@/lib/photo/test-card";
 import { setPngDpi } from "@/lib/photo/png-dpi";
 import { engraveDefaultsWithMemory, rememberedSpread } from "@/lib/photo/engrave-memory";
+import LaserSetup, { useLaser } from "./LaserSetup";
+import { fmtSpeed, recommendPhoto } from "@/lib/photo/laser-profile";
 
 // Saved wood/laser settings are applied once per page load (the store starts
 // with plain defaults so the server render matches). New images get them from
@@ -111,6 +113,8 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
 
   const heightMm = photoOutput ? Math.round((photoOutput.h / photoOutput.w) * engrave.widthMm) : null;
   const interval = (25.4 / engrave.dpi).toFixed(2);
+  const laser = useLaser();
+  const laserSetting = laser ? (laser.saved?.[engrave.material] ?? recommendPhoto(laser, engrave.material)) : null;
 
   return (
     <div className="px-5 py-5 space-y-6">
@@ -174,6 +178,9 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
         <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">{mat.hint}</p>
       </div>
 
+      {/* My laser: starting speed and power */}
+      <LaserSetup material={engrave.material} burnSpread={engrave.burnSpread ?? 0} onUseSpread={(v) => setEngrave({ burnSpread: v })} disabled={disabled} />
+
       {/* Size */}
       <div>
         <Label icon={Ruler} text="Size" />
@@ -229,7 +236,7 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
           <Download className="w-3.5 h-3.5" /> {cardBusy ? "Making test card..." : "Download test card"}
         </button>
         <p className="text-[10px] text-foreground-muted mt-1.5 leading-relaxed">
-          Burn this small strip on a scrap of the same wood first, with the same laser settings. Rows 0 to 5 are each Burn spread level, with a crop of your photo and five grey steps. Pick the row that looks most like the photo and set Burn spread to that number.
+          Burn this small strip on a scrap of the same wood first, at the same speed and power you'll use for the real piece (see My laser above). Rows 0 to 5 are each Burn spread level, with a crop of your photo and five grey steps. Pick the row that looks most like the photo and set Burn spread to that number.
         </p>
         {cardError && <p className="mt-1.5 text-[11px] text-red-400">{cardError}</p>}
       </div>
@@ -289,6 +296,7 @@ export default function PhotoPanel({ disabled }: { disabled: boolean }) {
       <div className="rounded-lg border border-dd-blue-400/20 bg-dd-blue-400/[0.04] p-3 text-[11px] text-foreground-muted leading-relaxed">
         <Info className="inline w-3.5 h-3.5 text-dd-blue-400 mr-1 -mt-0.5" />
         The PNG opens at {engrave.widthMm} mm wide. In LightBurn, set the image mode to <b className="text-foreground">Passthrough</b> and the line interval to <b className="text-foreground">{interval} mm</b>. The dots are already done for you.
+        {laserSetting && <> Speed <b className="text-foreground">{fmtSpeed(laserSetting.speed)}</b>, power <b className="text-foreground">{laserSetting.power}%</b>{laser?.saved?.[engrave.material] ? " (your saved settings)" : " (starting point: test first)"}.</>}
       </div>
     </div>
   );

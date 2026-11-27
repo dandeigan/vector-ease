@@ -15,6 +15,8 @@ import { svgToLbrn2, defaultPresetForMode } from "@/lib/vectorizer/svg-to-lbrn2"
 import { colorName, parseLayers, stripHiddenLayers } from "@/lib/vectorizer/svg-layers";
 import { findBackgroundLayer, type BackgroundLayer } from "@/lib/vectorizer/background-layer";
 import { setPngDpi } from "@/lib/photo/png-dpi";
+import { fmtSpeed, loadLaser, modelLabel, recommendPhoto } from "@/lib/photo/laser-profile";
+import { materialById } from "@/lib/photo/engrave";
 import {
   computeImageFingerprint,
   evaluateDownload,
@@ -157,7 +159,18 @@ export default function ConvertExports() {
       board: { w: Math.round(photoOutput.widthMm), h: Math.round((photoOutput.h / photoOutput.w) * photoOutput.widthMm) },
       layers: [],
       hiddenLayerNames: [],
+      laser: laserInfo(),
     });
+  };
+
+  /** The user's laser, with speed and power for the current material (saved or estimated). */
+  const laserInfo = (): ExportInfo["laser"] => {
+    const laser = loadLaser();
+    if (!laser) return undefined;
+    const material = useEditorStore.getState().engrave.material;
+    const mine = laser.saved?.[material];
+    const s = mine ?? recommendPhoto(laser, material);
+    return { machine: modelLabel(laser), speed: fmtSpeed(s.speed), power: s.power, saved: !!mine, material: materialById(material).label };
   };
 
   /** Photo engrave into the Studio as an image engrave, at its real size. */

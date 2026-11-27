@@ -12,6 +12,8 @@ export interface ExportInfo {
   board?: { w: number; h: number };
   layers: LayerWithCount[]; // layers that made it into the file
   hiddenLayerNames: string[];
+  /** Photo engrave: speed and power for the user's laser, if they set one up. */
+  laser?: { machine: string; speed: string; power: number; saved: boolean; material: string };
 }
 
 const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
@@ -120,6 +122,20 @@ export default function ExportDoneDialog({
             <p className="text-xs text-dd-gold-400 mt-2">Left out because they were hidden: {info.hiddenLayerNames.join(", ")}.</p>
           )}
         </div>}
+
+        {info.laser && (
+          <div className="mt-4 rounded-xl border border-dd-gold-400/30 bg-dd-gold-400/[0.05] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground-muted mb-1">
+              {info.laser.saved ? "Your settings" : "Starting settings"}: {info.laser.machine}, {info.laser.material}
+            </div>
+            <div className="text-sm">
+              <b className="text-dd-gold-400">{info.laser.speed}</b> at <b className="text-dd-gold-400">{info.laser.power}% power</b>
+            </div>
+            <p className="text-xs text-foreground-muted mt-1">
+              {info.laser.saved ? "From your own Material Test." : "An estimate: confirm it with a Material Test on scrap first. Photos need far less power than cuts or solid fills."}
+            </p>
+          </div>
+        )}
 
         <div className="mt-4">
           <div className="text-sm font-semibold mb-1.5">What&apos;s next</div>
