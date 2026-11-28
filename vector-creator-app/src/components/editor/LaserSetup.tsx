@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Cpu, Pencil } from "lucide-react";
 import { materialById, type MaterialId } from "@/lib/photo/engrave";
 import {
   LASER_MODELS, fmtSpeed, loadLaser, looksTooHot, materialTestRange, modelLabel, onLaserChange, profileFor,
-  recommendPhoto, saveLaser, startingSpread, type LaserKind, type LaserProfile,
+  recommendPhoto, saveLaser, DEFAULT_GCODE, startingSpread, type LaserKind, type LaserProfile,
 } from "@/lib/photo/laser-profile";
 
 /** The saved laser profile, kept in sync across components (null until loaded or if unset). */
@@ -186,6 +186,31 @@ export default function LaserSetup({ material, burnSpread, onUseSpread, disabled
           {mine ? "Update my settings" : "Save what worked for me"}
         </button>
       )}
+
+      <details className="mt-2 group">
+        <summary className="text-[11px] text-dd-gold-400 cursor-pointer hover:underline list-none">G-code position (for Export G-code)</summary>
+        <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          {([["x", "Left (X)"], ["y", "Bottom (Y)"], ["scanOffset", "Scan offset"]] as const).map(([k, l]) => (
+            <label key={k} className="text-[10px] text-foreground-muted">
+              {l}
+              <input
+                type="number" step={k === "scanOffset" ? 0.05 : 1}
+                defaultValue={(laser.gcode ?? DEFAULT_GCODE)[k]}
+                key={`${k}-${(laser.gcode ?? DEFAULT_GCODE)[k]}`}
+                onBlur={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  saveLaser({ ...laser, gcode: { ...(laser.gcode ?? DEFAULT_GCODE), [k]: v } });
+                }}
+                className="mt-0.5 w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-dd-gold-400/50"
+              />
+            </label>
+          ))}
+        </div>
+        <p className="text-[10px] text-foreground-muted mt-1 leading-relaxed">
+          In mm. Left and Bottom place the photo&apos;s lower-left corner, measured from your laser&apos;s home corner, the same numbers your laser software shows for position. Scan offset fixes doubled or fuzzy edges: try 0.1, then 0.2 or -0.1, until edges look crisp. Leave it at 0 if they already do.
+        </p>
+      </details>
 
       {burnSpread === 0 && spreadStart > 0 && (
         <p className="text-[10px] text-foreground-muted mt-2 leading-relaxed">

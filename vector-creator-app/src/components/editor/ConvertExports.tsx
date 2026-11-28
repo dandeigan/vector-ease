@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Download, FileCode2, FilePlus, Flame, FolderOpen, ImagePlus, LayoutTemplate } from "lucide-react";
+import { ChevronDown, Cpu, Download, FileCode2, FilePlus, Flame, FolderOpen, ImagePlus, LayoutTemplate } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { useAuth } from "@/components/auth/AuthContext";
 import PricingDialog from "@/components/PricingDialog";
@@ -15,9 +15,10 @@ import { svgToLbrn2, defaultPresetForMode } from "@/lib/vectorizer/svg-to-lbrn2"
 import { colorName, parseLayers, stripHiddenLayers } from "@/lib/vectorizer/svg-layers";
 import { findBackgroundLayer, type BackgroundLayer } from "@/lib/vectorizer/background-layer";
 import { setPngDpi } from "@/lib/photo/png-dpi";
-import { fmtSpeed, loadLaser, modelLabel, recommendPhoto } from "@/lib/photo/laser-profile";
+import { DEFAULT_GCODE, fmtSpeed, gcodePreamble, loadLaser, modelLabel, recommendPhoto } from "@/lib/photo/laser-profile";
 import { materialById } from "@/lib/photo/engrave";
 import { photoToLbrn2 } from "@/lib/photo/photo-lbrn2";
+import { photoToGcode } from "@/lib/photo/photo-gcode";
 import {
   computeImageFingerprint,
   evaluateDownload,
@@ -192,6 +193,37 @@ export default function ConvertExports() {
     });
   };
 
+  /** Photo engrave as GRBL G-code (Falcon Design Space "Run G-code", LaserGRBL, UGS). */
+  const doPhotoGcode = async () => {
+    if (!photoOutput) return;
+    const { engrave } = useEditorStore.getState();
+    const laser = loadLaser();
+    const s = laser ? (laser.saved?.[engrave.material] ?? recommendPhoto(laser, engrave.material)) : { speed: 6000, power: 20 };
+    const place = laser?.gcode ?? DEFAULT_GCODE;
+    const code = photoToGcode({
+      pixels: photoOutput.pixels, w: photoOutput.w, h: photoOutput.h, dpi: photoOutput.dpi,
+      speedMmMin: s.speed, powerPct: s.power, grayscale: engrave.dither === "grayscale",
+      originX: place.x, originY: place.y, scanOffset: place.scanOffset,
+      preamble: gcodePreamble(laser), label: laser ? modelLabel(laser) : undefined,
+    });
+    const blob = new Blob([code], { type: "text/plain" });
+    const file = "vectorease-photo-engrave.gcode";
+    lastExport.current = { blob, file };
+    saveBlob(blob, file);
+    if (exportDialogSkipped()) return;
+    const widthMm = photoOutput.widthMm;
+    setExported({
+      kind: "photo-gcode",
+      file,
+      shapeCount: 0,
+      board: { w: Math.round(widthMm), h: Math.round((photoOutput.h / photoOutput.w) * widthMm) },
+      layers: [],
+      hiddenLayerNames: [],
+      laser: laserInfo() ?? { machine: "No laser set up yet", speed: fmtSpeed(6000), power: 20, saved: false, material: materialById(engrave.material).label },
+      placement: place,
+    });
+  };
+
   /** The user's laser, with speed and power for the current material (saved or estimated). */
   const laserInfo = (): ExportInfo["laser"] => {
     const laser = loadLaser();
@@ -323,6 +355,9 @@ export default function ConvertExports() {
           </button>
           <button onClick={() => gated(doPhotoLbrn)} disabled={!photoReady} className="btn-export" title={photoOutput ? "LightBurn project with the photo, speed, power and line interval already set" : "Upload a photo first"}>
             <Flame className="w-4 h-4" /> <span className="hidden sm:inline">LightBurn</span> .lbrn2
+          </button>
+          <button onClick={() => gated(doPhotoGcode)} disabled={!photoReady} className="btn-export" title={photoOutput ? "G-code for Falcon Design Space (File → Run G-code), LaserGRBL or UGS, with speed, power and position set" : "Upload a photo first"}>
+            <Cpu className="w-4 h-4" /> <span className="hidden sm:inline">G-code</span><span className="sm:hidden">.gcode</span>
           </button>
         </>
       ) : (<>

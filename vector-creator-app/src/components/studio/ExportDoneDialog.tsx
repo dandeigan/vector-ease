@@ -5,7 +5,7 @@ import { CheckCircle2, Download, FilePlus2, ImageIcon, X, type LucideIcon } from
 import type { LayerWithCount } from "@/lib/studio/engine";
 
 export interface ExportInfo {
-  kind: "svg" | "lac" | "lbrn2" | "dxf" | "png" | "photo-lbrn2";
+  kind: "svg" | "lac" | "lbrn2" | "dxf" | "png" | "photo-lbrn2" | "photo-gcode";
   file: string;
   shapeCount: number;
   /** Design size in mm, when known. */
@@ -14,6 +14,8 @@ export interface ExportInfo {
   hiddenLayerNames: string[];
   /** Photo engrave: speed and power for the user's laser, if they set one up. */
   laser?: { machine: string; speed: string; power: number; saved: boolean; material: string };
+  /** G-code: where the photo sits on the bed (mm from the home corner). */
+  placement?: { x: number; y: number; scanOffset: number };
 }
 
 const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
@@ -41,6 +43,11 @@ const NEXT_STEPS: Record<ExportInfo["kind"], string[]> = {
     "Double-click the file to open it in LightBurn. The photo comes in at the size you picked, on one Image layer.",
     "Speed, power and line interval are already set. The image mode shows Threshold: that burns exactly VectorEase's dots, the same as Pass-Through. Leave it.",
     "Check the size and position on the bed, then run a small test on scrap of the same material first.",
+  ],
+  "photo-gcode": [
+    "Falcon Design Space: File → Run G-code and pick this file. LaserGRBL or UGS: open it and send. Other software isn't needed.",
+    "The laser homes first, then burns with the speed and power shown here. Use your own Material Test numbers if you have them (My laser → Save what worked).",
+    "First time: burn it on cardboard at low power to check the position and that the photo isn't upside down. Change the position under My laser → G-code position.",
   ],
   dxf: [
     "Import the file into your laser or CAD software.",
@@ -109,10 +116,10 @@ export default function ExportDoneDialog({
         </div>
         <p className="text-sm text-foreground-muted mt-2 leading-relaxed">
           <b className="text-foreground break-all">{info.file}</b> is in your <b className="text-foreground">Downloads</b> folder.
-          {" "}{info.kind === "png" || info.kind === "photo-lbrn2" ? "Photo engrave" : `${info.shapeCount} shape${info.shapeCount === 1 ? "" : "s"}`}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
+          {" "}{info.kind === "png" || info.kind === "photo-lbrn2" || info.kind === "photo-gcode" ? "Photo engrave" : `${info.shapeCount} shape${info.shapeCount === 1 ? "" : "s"}`}{info.board ? `, ${info.board.w} × ${info.board.h} mm` : ""}.
         </p>
 
-        {info.kind !== "png" && info.kind !== "photo-lbrn2" && <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
+        {info.kind !== "png" && info.kind !== "photo-lbrn2" && info.kind !== "photo-gcode" && <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground-muted mb-2">In this file</div>
           <ul className="space-y-1.5">
             {info.layers.map((l) => (
@@ -139,6 +146,11 @@ export default function ExportDoneDialog({
             <p className="text-xs text-foreground-muted mt-1">
               {info.laser.saved ? "From your own Material Test." : "An estimate: confirm it with a Material Test on scrap first. Photos need far less power than cuts or solid fills."}
             </p>
+            {info.placement && (
+              <p className="text-xs text-foreground-muted mt-1">
+                Lower-left corner at <b className="text-foreground">X {info.placement.x} mm, Y {info.placement.y} mm</b> from the home corner{info.placement.scanOffset ? `, scan offset ${info.placement.scanOffset} mm` : ""}.
+              </p>
+            )}
           </div>
         )}
 

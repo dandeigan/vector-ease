@@ -53,6 +53,24 @@ export interface LaserProfile {
   maxSpeed: number;
   /** What worked in the user's own Material Test, per material. */
   saved?: Partial<Record<MaterialId, LaserSetting>>;
+  /** G-code export: where the photo goes on the bed and the scan offset. */
+  gcode?: GcodePlacement;
+}
+
+export interface GcodePlacement {
+  /** Lower-left corner of the photo, mm from the laser's home corner. */
+  x: number;
+  y: number;
+  /** mm shift for right-to-left rows (fixes doubled edges). */
+  scanOffset: number;
+}
+
+export const DEFAULT_GCODE: GcodePlacement = { x: 10, y: 10, scanOffset: 0 };
+
+/** Header lines the machine's own software sends before a job. */
+export function gcodePreamble(laser: LaserProfile | null): string[] {
+  // Falcon Design Space sends this before every Falcon2 job; copied as-is so ours matches.
+  return laser?.modelId.startsWith("falcon2") ? ["$101=80"] : [];
 }
 
 export interface LaserSetting {
@@ -165,5 +183,5 @@ export function profileFor(modelId: string, other?: { kind: LaserKind; watts: nu
     : { modelId: "other", kind: other?.kind ?? "diode", watts: other?.watts ?? 10, maxSpeed: other?.kind === "co2" ? 30000 : 20000 };
   // Saved results belong to the machine: keep them only if it's the same one.
   const same = keep && keep.modelId === base.modelId && keep.watts === base.watts && keep.kind === base.kind;
-  return { ...base, saved: same ? keep!.saved : undefined };
+  return { ...base, saved: same ? keep!.saved : undefined, gcode: same ? keep!.gcode : undefined };
 }
